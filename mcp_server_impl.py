@@ -81,7 +81,7 @@ if __name__ == "__main__":
     port_env = os.getenv("PORT")
     if port_env:
         logger.info(f"Starting MCP server in SSE mode on port {port_env}")
-        mcp.run(transport="sse")
+        mcp.run(transport="sse", host="0.0.0.0", port=int(port_env))
     else:
         logger.info("Starting MCP server in Stdio mode")
         mcp.run()
