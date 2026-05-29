@@ -10,10 +10,23 @@ logger = logging.getLogger(__name__)
 class RepoLoader:
     """Handles cloning of git repositories."""
 
-    def __init__(self, repo_url: str):
-        self.repo_url = repo_url
+    def __init__(self, repo_url: str, github_token: str = None):
+        self.github_token = github_token or os.getenv("GITHUB_TOKEN")
         self.temp_dir = tempfile.mkdtemp()
         self.repo_name = repo_url.split("/")[-1].replace(".git", "")
+        self.repo_url = self.get_authenticated_url(repo_url, self.github_token)
+
+    def get_authenticated_url(self, url: str, token: str) -> str:
+        """Injects a GitHub token into the HTTPS URL to authenticate operations."""
+        if not token:
+            return url
+        if "@" in url:
+            return url
+        if url.startswith("https://"):
+            return f"https://{token}@{url[8:]}"
+        elif url.startswith("http://"):
+            return f"http://{token}@{url[7:]}"
+        return url
 
     def clone_repo(self) -> str:
         """Clones the repository to a temporary directory and returns the path."""
