@@ -8,6 +8,7 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 import logging
 from mcp.server.fastmcp import FastMCP
+from mcp.server.transport_security import TransportSecuritySettings
 from core.repo_loader import RepoLoader
 from core.file_traverser import FileTraverser
 from core.graph import app as workflow_app
@@ -17,8 +18,14 @@ from core.doc_writer import DocumentationWriter
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
 
-# Create the MCP server
-mcp = FastMCP("AI Document Creator")
+# Create the MCP server with DNS rebinding protection disabled
+# to permit external access through Render/Cloudflare proxies.
+mcp = FastMCP(
+    "AI Document Creator",
+    transport_security=TransportSecuritySettings(
+        enable_dns_rebinding_protection=False
+    )
+)
 
 @mcp.tool()
 async def document_repo(repo_url: str, output_dir: str = "docs") -> str:
