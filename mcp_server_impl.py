@@ -77,11 +77,12 @@ async def document_repo(repo_url: str, output_dir: str = "docs") -> str:
             repo_loader.cleanup()
 
 if __name__ == "__main__":
-    # If PORT environment variable is set (typical in cloud hosts like Render), run in SSE mode
     port_env = os.getenv("PORT")
     if port_env:
         logger.info(f"Starting MCP server in SSE mode on port {port_env}")
-        mcp.run(transport="sse", host="0.0.0.0", port=int(port_env))
+        mcp.settings.host = "0.0.0.0"
+        mcp.settings.port = int(port_env)
+        mcp.run(transport="sse")
     else:
         logger.info("Starting MCP server in Stdio mode")
         mcp.run()
