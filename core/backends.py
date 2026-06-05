@@ -65,3 +65,23 @@ class ProviderBackend(CompletionBackend):
         result = await self._model.ainvoke(prompt)
         content = getattr(result, "content", result)
         return content if isinstance(content, str) else str(content)
+
+
+class SamplingBackend(CompletionBackend):
+    """Asks the MCP host's own model to generate — zero API cost to the operator."""
+
+    def __init__(self, ctx, max_tokens: int = 4096):
+        self._ctx = ctx
+        self._max_tokens = max_tokens
+
+    async def complete(self, prompt: str) -> str:
+        from mcp.types import SamplingMessage, TextContent
+
+        result = await self._ctx.session.create_message(
+            messages=[
+                SamplingMessage(role="user", content=TextContent(type="text", text=prompt))
+            ],
+            max_tokens=self._max_tokens,
+        )
+        content = result.content
+        return content.text if getattr(content, "type", None) == "text" else str(content)

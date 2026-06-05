@@ -55,3 +55,34 @@ def test_provider_backend_requires_model():
     from core.config import DocConfig
     with __import__("pytest").raises(BackendError):
         ProviderBackend(DocConfig())  # no provider -> no model_id
+
+
+class _FakeSession:
+    def __init__(self):
+        self.received = None
+
+    async def create_message(self, messages, max_tokens):
+        self.received = {"messages": messages, "max_tokens": max_tokens}
+
+        class _Text:
+            type = "text"
+            text = "SAMPLED DOC"
+
+        class _Result:
+            content = _Text()
+
+        return _Result()
+
+
+class _FakeCtx:
+    def __init__(self):
+        self.session = _FakeSession()
+
+
+async def test_sampling_backend_calls_host_session():
+    from core.backends import SamplingBackend
+    ctx = _FakeCtx()
+    backend = SamplingBackend(ctx, max_tokens=256)
+    out = await backend.complete("document this file")
+    assert out == "SAMPLED DOC"
+    assert ctx.session.received["max_tokens"] == 256
