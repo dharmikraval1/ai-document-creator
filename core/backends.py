@@ -13,6 +13,21 @@ class BackendError(RuntimeError):
     """Raised when no usable LLM backend can be constructed."""
 
 
+def _content_to_text(content) -> str:
+    """Flatten a chat model response (str, or list of content blocks) to plain text."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        parts: list[str] = []
+        for block in content:
+            if isinstance(block, str):
+                parts.append(block)
+            elif isinstance(block, dict) and block.get("type") == "text":
+                parts.append(block.get("text", ""))
+        return "".join(parts)
+    return str(content)
+
+
 class CompletionBackend(ABC):
     """Generates text from a prompt. The only thing the pipeline knows about an LLM."""
 
@@ -63,8 +78,7 @@ class ProviderBackend(CompletionBackend):
 
     async def complete(self, prompt: str) -> str:
         result = await self._model.ainvoke(prompt)
-        content = getattr(result, "content", result)
-        return content if isinstance(content, str) else str(content)
+        return _content_to_text(getattr(result, "content", result))
 
 
 class SamplingBackend(CompletionBackend):

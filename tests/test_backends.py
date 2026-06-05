@@ -54,7 +54,7 @@ def test_provider_backend_requires_model():
     from core.backends import BackendError, ProviderBackend
     from core.config import DocConfig
     with __import__("pytest").raises(BackendError):
-        ProviderBackend(DocConfig())  # no provider -> no model_id
+        ProviderBackend(DocConfig())  # no provider -> has_provider is False
 
 
 class _FakeSession:
@@ -110,3 +110,74 @@ def test_pick_backend_raises_clear_error_without_provider_or_ctx():
     with pytest.raises(BackendError) as exc:
         pick_backend(DocConfig(), ctx=None)
     assert "provider key" in str(exc.value)
+
+
+async def test_provider_backend_flattens_list_content(monkeypatch):
+    import core.backends as backends
+
+    class _ListModel:
+        async def ainvoke(self, prompt):
+            return _FakeMessage([{"type": "text", "text": "A"}, {"type": "text", "text": "B"}])
+
+    monkeypatch.setattr(backends, "init_chat_model", lambda **k: _ListModel())
+    from core.config import DocConfig
+    backend = backends.ProviderBackend(DocConfig(provider="anthropic"))
+    assert await backend.complete("hi") == "AB"
+
+
+async def test_provider_backend_ignores_non_text_blocks(monkeypatch):
+    import core.backends as backends
+
+    class _MixedModel:
+        async def ainvoke(self, prompt):
+            return _FakeMessage([{"type": "text", "text": "keep"}, {"type": "image", "source": "x"}])
+
+    monkeypatch.setattr(backends, "init_chat_model", lambda **k: _MixedModel())
+    from core.config import DocConfig
+    backend = backends.ProviderBackend(DocConfig(provider="anthropic"))
+    assert await backend.complete("hi") == "keep"
+
+
+async def test_provider_backend_azure_branch(monkeypatch):
+    import langchain_openai
+    from core.config import DocConfig
+    from core.backends import ProviderBackend
+
+    captured = {}
+
+    class _FakeAzure:
+        def __init__(self, **kwargs):
+            captured.update(kwargs)
+
+        async def ainvoke(self, prompt):
+            return _FakeMessage("AZURE OUT")
+
+    monkeypatch.setattr(langchain_openai, "AzureChatOpenAI", _FakeAzure)
+    monkeypatch.delenv("AZURE_OPENAI_DEPLOYMENT_NAME", raising=False)
+
+    backend = ProviderBackend(DocConfig(provider="azure"))
+    assert captured["azure_deployment"] == "gpt-4o"  # falls back to default when env unset
+    assert await backend.complete("hi") == "AZURE OUT"
+
+
+async def test_sampling_backend_non_text_falls_back_to_str():
+    from core.backends import SamplingBackend
+
+    class _Img:
+        type = "image"
+
+        def __str__(self):
+            return "IMG-BLOCK"
+
+    class _Result:
+        content = _Img()
+
+    class _Sess:
+        async def create_message(self, messages, max_tokens):
+            return _Result()
+
+    class _Ctx:
+        session = _Sess()
+
+    out = await SamplingBackend(_Ctx()).complete("x")
+    assert out == "IMG-BLOCK"
