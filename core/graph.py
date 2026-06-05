@@ -50,7 +50,11 @@ def build_index_prompt(file_list: str, doc_summaries: str) -> str:
 
 
 def _extract_summary(doc_content: str) -> str:
-    match = re.search(r"### Summary\s*([\s\S]*?)(?=(?:##|###)|$)", doc_content, re.IGNORECASE)
+    match = re.search(
+        r"###\s*Summary\b[ \t]*\n?([\s\S]*?)(?=^\s{0,3}#{1,6}\s|\Z)",
+        doc_content,
+        re.IGNORECASE | re.MULTILINE,
+    )
     if match and match.group(1).strip():
         return match.group(1).strip()
     cleaned = re.sub(r"#+\s+.*", "", doc_content).strip()
@@ -59,13 +63,14 @@ def _extract_summary(doc_content: str) -> str:
 
 
 async def analyze_repo(state: AgentState):
+    """Reserved entry-point seam for later phases (drift / incremental / diagrams)."""
     return {"files": state["files"]}
 
 
 async def generate_docs(state: AgentState):
     backend = state["backend"]
     repo_path = state["repo_path"]
-    semaphore = asyncio.Semaphore(state.get("max_concurrency", 8))
+    semaphore = asyncio.Semaphore(max(1, state.get("max_concurrency", 8)))
 
     async def process(file_path: str):
         full_path = os.path.join(repo_path, file_path)
