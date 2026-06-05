@@ -77,8 +77,8 @@ async def _run_pipeline(source, output_dir, config, ctx):
 async def document_local_project(
     path: str = ".",
     output_dir: str = "docs",
-    provider: str = None,
-    model: str = None,
+    provider: str | None = None,
+    model: str | None = None,
     ctx: Context = None,
 ) -> str:
     """Generate documentation for a project folder on the local machine.
@@ -98,9 +98,9 @@ async def document_local_project(
 async def document_repo(
     repo_url: str,
     output_dir: str = "docs",
-    github_token: str = None,
-    provider: str = None,
-    model: str = None,
+    github_token: str | None = None,
+    provider: str | None = None,
+    model: str | None = None,
     ctx: Context = None,
 ) -> str:
     """Generate documentation for a GitHub repository (clones it first).

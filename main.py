@@ -11,7 +11,7 @@ load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from core.config import resolve_config
-from core.backends import pick_backend
+from core.backends import pick_backend, BackendError
 from core.sources import GitSource, LocalSource
 from core.file_traverser import FileTraverser
 from core.graph import app
@@ -67,11 +67,15 @@ def main():
 
     try:
         asyncio.run(run(source, args.output, config))
+    except BackendError as exc:
+        logger.error("%s", exc)
+        sys.exit(1)
     except Exception as exc:
         logger.error("An error occurred: %s", exc)
         import traceback
 
         traceback.print_exc()
+        sys.exit(1)
 
 
 if __name__ == "__main__":
