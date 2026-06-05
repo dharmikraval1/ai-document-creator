@@ -28,6 +28,8 @@ Delivered on this branch:
 
 Each unit went through implementer + spec-compliance review + code-quality review (with fixes applied), e.g.: list-content flattening bug (Anthropic), `resolve_config` kwarg crash, nullable MCP tool params, bounded-concurrency test, token privatisation.
 
+**Final full-branch review (2026-06-05): ✅ MERGE-READY** — no blocking issues; state contract consistent across CLI/MCP/graph, `pick_backend` flow coherent, async correct, `requirements.txt` complete, 43 tests pass, no dangling references. The README was brought in sync with the new architecture as the one follow-up. Ready to merge `feature/multi-provider-foundation` → `main`.
+
 ## How to resume (fresh device)
 
 ```bash
