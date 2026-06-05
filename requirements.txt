@@ -17,3 +17,6 @@ langchain-core
 typing-extensions
 langchain-aws
 boto3
+langchain-anthropic
+langchain-ollama
+pytest-asyncio
