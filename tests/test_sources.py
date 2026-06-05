@@ -3,7 +3,7 @@ import os
 
 import pytest
 
-from core.sources import LocalSource, Source, mask_token
+from core.sources import GitSource, LocalSource, Source, mask_token
 
 
 def test_mask_token_hides_credentials():
@@ -27,9 +27,6 @@ def test_local_source_is_a_source():
     assert isinstance(LocalSource("."), Source)
 
 
-from core.sources import GitSource
-
-
 def test_gitsource_injects_token():
     src = GitSource("https://github.com/user/repo", github_token="tok")
     assert src.repo_url == "https://tok@github.com/user/repo"
@@ -49,3 +46,23 @@ def test_gitsource_no_token_leaves_url_untouched():
     src = GitSource("https://github.com/user/repo.git", github_token=None)
     assert src.repo_url == "https://github.com/user/repo.git"
     src.cleanup()
+
+
+def test_mask_token_userpass_double_at_and_ssh():
+    # user:pass form is masked
+    assert mask_token("https://user:pass@host/repo") == "https://***@host/repo"
+    # only the leading credential (up to the first @) is masked; rest is preserved verbatim
+    assert (
+        mask_token("https://tok@evil.com@github.com/u/r.git")
+        == "https://***@evil.com@github.com/u/r.git"
+    )
+    # SSH scp-style URLs have no '://' and are left untouched
+    assert mask_token("git@github.com:user/repo.git") == "git@github.com:user/repo.git"
+
+
+def test_local_source_rejects_file_path(tmp_path):
+    f = tmp_path / "afile.txt"
+    f.write_text("x", encoding="utf-8")
+    src = LocalSource(str(f))
+    with pytest.raises(FileNotFoundError):
+        src.prepare()

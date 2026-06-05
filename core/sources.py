@@ -44,10 +44,10 @@ class GitSource(Source):
     """Clones a Git repository into a temp dir and cleans it up afterwards."""
 
     def __init__(self, repo_url: str, github_token: str | None = None):
-        self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+        self._github_token = github_token or os.getenv("GITHUB_TOKEN")
         self.temp_dir = tempfile.mkdtemp()
         self.repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
-        self.repo_url = self._authenticated_url(repo_url, self.github_token)
+        self.repo_url = self._authenticated_url(repo_url, self._github_token)
 
     def _authenticated_url(self, url: str, token: str | None) -> str:
         if not token or "@" in url:
@@ -73,11 +73,11 @@ class GitSource(Source):
         if not os.path.exists(self.temp_dir):
             return
 
-        def _on_error(func, path, _exc):
+        def _on_exc(func, path, _exc):
             try:
                 os.chmod(path, stat.S_IWRITE)
                 func(path)
             except Exception:
                 pass
 
-        shutil.rmtree(self.temp_dir, onerror=_on_error)
+        shutil.rmtree(self.temp_dir, onexc=_on_exc)
