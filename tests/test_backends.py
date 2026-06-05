@@ -86,3 +86,27 @@ async def test_sampling_backend_calls_host_session():
     out = await backend.complete("document this file")
     assert out == "SAMPLED DOC"
     assert ctx.session.received["max_tokens"] == 256
+
+
+async def test_pick_backend_prefers_provider_when_key_present(monkeypatch):
+    import core.backends as backends
+    monkeypatch.setattr(backends, "init_chat_model", lambda *a, **k: _FakeModel())
+    from core.config import DocConfig
+    backend = backends.pick_backend(DocConfig(provider="openai"), ctx=_FakeCtx())
+    assert isinstance(backend, backends.ProviderBackend)
+
+
+def test_pick_backend_falls_back_to_sampling_with_ctx():
+    from core.backends import pick_backend, SamplingBackend
+    from core.config import DocConfig
+    backend = pick_backend(DocConfig(), ctx=_FakeCtx())
+    assert isinstance(backend, SamplingBackend)
+
+
+def test_pick_backend_raises_clear_error_without_provider_or_ctx():
+    import pytest
+    from core.backends import pick_backend, BackendError
+    from core.config import DocConfig
+    with pytest.raises(BackendError) as exc:
+        pick_backend(DocConfig(), ctx=None)
+    assert "provider key" in str(exc.value)
