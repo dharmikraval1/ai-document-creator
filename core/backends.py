@@ -30,3 +30,38 @@ class FakeBackend(CompletionBackend):
     async def complete(self, prompt: str) -> str:
         self.calls.append(prompt)
         return self.response
+
+
+class ProviderBackend(CompletionBackend):
+    """Calls a real provider (anthropic/openai/azure/bedrock/ollama) via LangChain."""
+
+    def __init__(self, config: DocConfig):
+        if not config.has_provider:
+            raise BackendError("ProviderBackend requires a provider")
+        if config.provider == "azure":
+            self._model = self._build_azure(config)
+        else:
+            # Pass model + provider separately so model names containing ':'
+            # (e.g. bedrock 'amazon.nova-pro-v1:0') are never mis-parsed.
+            self._model = init_chat_model(
+                model=config.resolved_model,
+                model_provider=config.lc_provider,
+                temperature=0,
+            )
+
+    @staticmethod
+    def _build_azure(config: DocConfig):
+        from langchain_openai import AzureChatOpenAI
+
+        return AzureChatOpenAI(
+            azure_deployment=config.model or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
+            openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
+            azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
+            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            temperature=0,
+        )
+
+    async def complete(self, prompt: str) -> str:
+        result = await self._model.ainvoke(prompt)
+        content = getattr(result, "content", result)
+        return content if isinstance(content, str) else str(content)
