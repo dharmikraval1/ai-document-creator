@@ -38,3 +38,46 @@ class LocalSource(Source):
         if not os.path.isdir(self._path):
             raise FileNotFoundError(f"Local path is not a directory: {self._path}")
         return self._path
+
+
+class GitSource(Source):
+    """Clones a Git repository into a temp dir and cleans it up afterwards."""
+
+    def __init__(self, repo_url: str, github_token: str | None = None):
+        self.github_token = github_token or os.getenv("GITHUB_TOKEN")
+        self.temp_dir = tempfile.mkdtemp()
+        self.repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
+        self.repo_url = self._authenticated_url(repo_url, self.github_token)
+
+    def _authenticated_url(self, url: str, token: str | None) -> str:
+        if not token or "@" in url:
+            return url
+        if url.startswith("https://"):
+            return f"https://{token}@{url[len('https://'):]}"
+        if url.startswith("http://"):
+            return f"http://{token}@{url[len('http://'):]}"
+        return url
+
+    def prepare(self) -> str:
+        from git import Repo
+
+        logger.info("Cloning %s to %s", mask_token(self.repo_url), self.temp_dir)
+        try:
+            Repo.clone_from(self.repo_url, self.temp_dir)
+            return self.temp_dir
+        except Exception:
+            self.cleanup()
+            raise
+
+    def cleanup(self) -> None:
+        if not os.path.exists(self.temp_dir):
+            return
+
+        def _on_error(func, path, _exc):
+            try:
+                os.chmod(path, stat.S_IWRITE)
+                func(path)
+            except Exception:
+                pass
+
+        shutil.rmtree(self.temp_dir, onerror=_on_error)
