@@ -1,97 +1,93 @@
-# AI-Driven Documentation Generator for GitHub Repositories
+# AI Document Creator
 
-## Project Overview
+An AI-powered documentation generator exposed as an **MCP server** and a **CLI**. It documents both **GitHub repositories** and **local projects**, using **any LLM** — Anthropic, OpenAI, Azure OpenAI, AWS Bedrock, or Ollama — or the **MCP host's own model via sampling** (zero API cost to the operator).
 
-Welcome to the AI-Driven Documentation Generator for GitHub Repositories! This project aims to automate the generation of comprehensive documentation for any GitHub repository using advanced AI techniques. By leveraging the power of AI, this tool clones a specified repository, traverses its files, processes them, and generates detailed documentation, making it easier for developers to understand and contribute to the project.
+> **Status:** Phase 1 (Foundation) complete. See [planning/PHASE1_STATUS.md](planning/PHASE1_STATUS.md) for the roadmap and how to resume work.
 
-## Architecture & Key Components
+## How it works
 
-The repository is structured to facilitate easy maintenance and scalability. Below is a detailed breakdown of the directory structure and the purpose of each component:
+Documentation generation is two independent choices over one async pipeline:
 
-### Directory Structure
+- **Source** — where the files come from: `GitSource` (clone a URL) or `LocalSource` (read a path on disk).
+- **Backend** — which LLM writes the docs: `ProviderBackend` (any provider via a key) or `SamplingBackend` (the MCP host's model). `pick_backend` chooses: a configured provider wins; otherwise host sampling; otherwise a clear error.
+
+The pipeline (`core/graph.py`) traverses files, generates per-file docs concurrently (bounded by a semaphore), then synthesizes a top-level `README.md`.
+
+## Directory structure
 
 ```
 .
-├── Dockerfile
-├── scratch_test_push.py
-├── verification_script.py
+├── main.py                  # CLI entry point
+├── mcp_server_impl.py       # MCP server (stdio + SSE); tools: document_local_project, document_repo
+├── core/
+│   ├── config.py            # DocConfig + provider/model resolution
+│   ├── backends.py          # CompletionBackend: ProviderBackend, SamplingBackend, FakeBackend, pick_backend
+│   ├── sources.py           # Source: LocalSource, GitSource, token masking
+│   ├── graph.py             # async, backend-agnostic LangGraph pipeline
+│   ├── file_traverser.py    # walks a tree, skips ignored/binary/oversized files
+│   └── doc_writer.py        # writes the generated markdown tree + index
+├── tests/                   # pytest suite (config, backends, sources, graph, mcp tools)
+├── planning/                # design spec, implementation plan, status/handoff
+├── Dockerfile               # container for the MCP server (Render/SSE)
 ├── requirements.txt
-├── main.py
-├── mcp_server_impl.py
-├── .gitignore
-├──.env.example
-└── core
-    ├── file_traverser.py
-    ├── repo_loader.py
-    ├── graph.py
-    └── doc_writer.py
+└── .env.example
 ```
-
-### Key Components
-
-- **Dockerfile**: Builds a Docker image for the Python application, setting up the environment and installing dependencies for running the MCP server.
-- **scratch_test_push.py**: Contains unit tests for the `RepoLoader` class and the `document_repo` function, ensuring the reliability of URL authentication rewriting and documentation generation.
-- **verification_script.py**: Verifies the documentation generation process by creating a temporary repository, traversing files, simulating graph execution, writing output, and verifying generated documentation files.
-- **requirements.txt**: Lists all Python packages required for the project, ensuring all dependencies are clearly defined and easily installable.
-- **main.py**: The entry point for the AI-driven document creator. It clones a specified GitHub repository, traverses its files, processes them using a LangGraph application, and generates documentation.
-- **mcp_server_impl.py**: Implements an AI-driven server for generating documentation for GitHub repositories using the `FastMCP` framework.
-- **.gitignore**: Specifies intentionally untracked files that Git should ignore, maintaining a clean and manageable repository.
-- **.env.example**: Provides a template for environment variables required to configure and run applications that interact with Azure OpenAI and AWS Bedrock services.
-- **core/file_traverser.py**: Contains the `FileTraverser` class, which traverses a directory and yields file paths, filtering out ignored and binary files, and respecting a maximum file size limit.
-- **core/repo_loader.py**: Provides the `RepoLoader` class designed to handle the cloning of Git repositories, including authentication and cleanup of temporary directories.
-- **core/graph.py**: Implements the documentation generation graph, processing repository files and generating documentation nodes.
-- **core/doc_writer.py**: Contains the `DocumentationWriter` class, responsible for writing generated documentation to files in a specified output directory in Markdown format.
 
 ## Installation
 
-To set up the project and its dependencies, follow these steps:
-
-1. **Clone the Repository**:
-    ```bash
-    git clone https://github.com/your-repo/ai-documentation-generator.git
-    cd ai-documentation-generator
-    ```
-
-2. **Create a Virtual Environment** (optional but recommended):
-    ```bash
-    python -m venv venv
-    source venv/bin/activate  # On Windows use `venv\Scripts\activate`
-    ```
-
-3. **Install Dependencies**:
-    ```bash
-    pip install -r requirements.txt
-    ```
-
-4. **Configure Environment Variables**:
-    Copy `.env.example` to `.env` and fill in the required values for Azure OpenAI and AWS Bedrock services.
-
-## Usage
-
-To generate documentation for a GitHub repository, run the following command:
-
 ```bash
-python main.py --repo-url https://github.com/username/repo
+python -m venv .venv
+.venv/Scripts/python.exe -m pip install -r requirements.txt   # Windows
+# source .venv/bin/activate && pip install -r requirements.txt  # macOS/Linux
 ```
 
-This will clone the repository, traverse its files, process them using the AI-driven graph, and generate documentation in the specified output directory.
+Then copy `.env.example` to `.env` and set the keys for one provider (or use `--provider ollama` for a local model).
 
-## Running Tests
+## Usage — CLI
 
-To ensure the project functions correctly, run the automated tests:
+```bash
+# Document a GitHub repo
+python main.py --repo https://github.com/user/repo --output docs
 
-1. **Run Unit Tests**:
-    ```bash
-    python -m unittest discover
-    ```
+# Document a local project
+python main.py --path . --output docs
 
-2. **Run Verification Script**:
-    ```bash
-    python verification_script.py
-    ```
+# Pick a provider/model explicitly
+python main.py --path . --provider anthropic
+python main.py --path . --provider ollama --model llama3.1
+```
 
-These tests will verify the functionality of the documentation generation process and ensure that all components work seamlessly together.
+The CLI requires a provider key (there is no MCP host to sample from). If none is configured it exits with an actionable message.
 
----
+## Usage — MCP server
 
-Thank you for using the AI-Driven Documentation Generator for GitHub Repositories. We hope this tool simplifies the process of generating comprehensive documentation for your projects!
+Configure the server in an MCP host (Claude Code, Cursor, Antigravity, …). It exposes two tools:
+
+- `document_local_project(path, output_dir, provider?, model?)` — document a folder on the local machine.
+- `document_repo(repo_url, output_dir, github_token?, provider?, model?)` — clone and document a GitHub repo.
+
+When no provider key is set, the tools fall back to the host's own model via MCP sampling.
+
+Run modes:
+- **stdio** (default): `python mcp_server_impl.py`
+- **SSE** (set `PORT`): used for the hosted deployment (e.g. Render).
+
+## LLM providers
+
+| Provider | Configure via |
+|---|---|
+| Anthropic | `ANTHROPIC_API_KEY` (or `--provider anthropic`) |
+| OpenAI | `OPENAI_API_KEY` |
+| Azure OpenAI | `AZURE_OPENAI_API_KEY` + endpoint/deployment (see `.env.example`) |
+| AWS Bedrock | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` |
+| Ollama (local) | `--provider ollama` (no key) |
+
+## Running tests
+
+```bash
+.venv/Scripts/python.exe -m pytest -q
+```
+
+## Roadmap
+
+Phase 1 (this) is the foundation. Hardening, incremental/drift docs, output profiles + Mermaid diagrams, and packaging + a GitHub Action follow — each detailed in [planning/](planning/).
