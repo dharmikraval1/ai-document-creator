@@ -85,3 +85,16 @@ class SamplingBackend(CompletionBackend):
         )
         content = result.content
         return content.text if getattr(content, "type", None) == "text" else str(content)
+
+
+def pick_backend(config: DocConfig, ctx=None) -> CompletionBackend:
+    """Choose a backend: a configured provider wins; otherwise host sampling; else error."""
+    if config.has_provider:
+        return ProviderBackend(config)
+    if ctx is not None:
+        return SamplingBackend(ctx)
+    raise BackendError(
+        "No LLM available. Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
+        "AZURE_OPENAI_API_KEY / AWS credentials), pass provider='ollama' for a local model, "
+        "or run inside an MCP host that supports sampling."
+    )
