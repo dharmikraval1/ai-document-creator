@@ -68,11 +68,14 @@ class ProviderBackend(CompletionBackend):
     def _build_azure(config: DocConfig):
         from langchain_openai import AzureChatOpenAI
 
+        from pydantic import SecretStr
+
+        raw_key = os.getenv("AZURE_OPENAI_API_KEY")
         return AzureChatOpenAI(
             azure_deployment=config.model or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
-            openai_api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
+            api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
             azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
-            api_key=os.getenv("AZURE_OPENAI_API_KEY"),
+            api_key=SecretStr(raw_key) if raw_key else None,
             temperature=0,
         )
 
