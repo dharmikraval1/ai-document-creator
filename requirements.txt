@@ -20,3 +20,6 @@ boto3
 langchain-anthropic
 langchain-ollama
 pytest-asyncio
+tenacity
+PyGithub
+uvicorn
