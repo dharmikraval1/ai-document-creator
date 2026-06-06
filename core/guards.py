@@ -65,3 +65,40 @@ def validate_repo_url(url: str) -> None:
                 f"Repository URL resolves to a private or reserved IP address "
                 f"({ip}), which is not permitted."
             )
+
+
+def validate_repo_size(repo_path: str, max_mb: int | None = None) -> None:
+    """Raise ValueError if the total size of *repo_path* exceeds *max_mb* MB.
+
+    *max_mb* defaults to the ``MAX_REPO_MB`` environment variable, or 500.
+    """
+    limit = max_mb if max_mb is not None else int(os.getenv("MAX_REPO_MB", "500"))
+    limit_bytes = limit * 1024 * 1024
+    total = 0
+    for root, _dirs, files in os.walk(repo_path):
+        for fname in files:
+            try:
+                total += os.path.getsize(os.path.join(root, fname))
+            except OSError:
+                pass
+    if total > limit_bytes:
+        raise ValueError(
+            f"Cloned repository size ({total // (1024 * 1024)} MB) "
+            f"exceeds the {limit} MB limit."
+        )
+
+
+def validate_local_path(path: str) -> None:
+    """Raise ValueError if *path* escapes the ``LOCAL_ROOT`` sandbox.
+
+    Has no effect when ``LOCAL_ROOT`` is not set (local / stdio deployments).
+    """
+    local_root = os.getenv("LOCAL_ROOT", "").strip()
+    if not local_root:
+        return
+    resolved = os.path.realpath(os.path.abspath(path))
+    root = os.path.realpath(os.path.abspath(local_root))
+    if resolved != root and not resolved.startswith(root + os.sep):
+        raise ValueError(
+            f"Path '{path}' is outside the allowed LOCAL_ROOT '{local_root}'."
+        )

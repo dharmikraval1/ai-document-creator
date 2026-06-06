@@ -1,10 +1,11 @@
 # tests/test_guards.py
+import os
 import socket
 from unittest.mock import patch
 
 import pytest
 
-from core.guards import validate_repo_url
+from core.guards import validate_local_path, validate_repo_size, validate_repo_url
 
 
 def _dns(ip: str):
@@ -95,3 +96,33 @@ def test_ipv6_ula_rejected():
     with patch("core.guards.socket.getaddrinfo", return_value=_dns6("fd00::1")):
         with pytest.raises(ValueError, match="private or reserved"):
             validate_repo_url("https://bypass.example.com/repo")
+
+
+def test_size_cap_passes_when_under_limit(tmp_path):
+    (tmp_path / "small.txt").write_text("x" * 100, encoding="utf-8")
+    validate_repo_size(str(tmp_path), max_mb=1)  # must not raise
+
+
+def test_size_cap_raises_when_over_limit(tmp_path):
+    (tmp_path / "big.bin").write_bytes(b"x" * (2 * 1024 * 1024))  # 2 MB
+    with pytest.raises(ValueError, match="exceeds"):
+        validate_repo_size(str(tmp_path), max_mb=1)
+
+
+def test_local_path_allowed_when_local_root_unset(monkeypatch, tmp_path):
+    monkeypatch.delenv("LOCAL_ROOT", raising=False)
+    validate_local_path(str(tmp_path))  # must not raise
+
+
+def test_local_path_allowed_within_root(monkeypatch, tmp_path):
+    sub = tmp_path / "project"
+    sub.mkdir()
+    monkeypatch.setenv("LOCAL_ROOT", str(tmp_path))
+    validate_local_path(str(sub))  # must not raise
+
+
+def test_local_path_blocked_outside_root(monkeypatch, tmp_path):
+    outside = str(tmp_path.parent)
+    monkeypatch.setenv("LOCAL_ROOT", str(tmp_path))
+    with pytest.raises(ValueError, match="outside"):
+        validate_local_path(outside)
