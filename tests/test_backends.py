@@ -93,7 +93,8 @@ async def test_pick_backend_prefers_provider_when_key_present(monkeypatch):
     monkeypatch.setattr(backends, "init_chat_model", lambda *a, **k: _FakeModel())
     from core.config import DocConfig
     backend = backends.pick_backend(DocConfig(provider="openai"), ctx=_FakeCtx())
-    assert isinstance(backend, backends.ProviderBackend)
+    assert isinstance(backend, backends.CompletionBackend)
+    assert not isinstance(backend, backends.SamplingBackend)
 
 
 def test_pick_backend_falls_back_to_sampling_with_ctx():

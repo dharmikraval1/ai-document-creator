@@ -102,9 +102,13 @@ class SamplingBackend(CompletionBackend):
 
 
 def pick_backend(config: DocConfig, ctx=None) -> CompletionBackend:
-    """Choose a backend: a configured provider wins; otherwise host sampling; else error."""
+    """Choose a backend: provider key → retry-wrapped ProviderBackend;
+    MCP host ctx → SamplingBackend; otherwise raise BackendError.
+    """
+    from .retry import with_retry
+
     if config.has_provider:
-        return ProviderBackend(config)
+        return with_retry(ProviderBackend(config))
     if ctx is not None:
         return SamplingBackend(ctx)
     raise BackendError(
