@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 import os
 import re
 import sys
@@ -12,24 +13,22 @@ from dotenv import load_dotenv
 load_dotenv()
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-import logging
+from starlette.requests import Request  # noqa: E402
+from starlette.responses import JSONResponse  # noqa: E402
 
-from starlette.requests import Request
-from starlette.responses import JSONResponse
+from github import Github, GithubException  # noqa: E402
 
-from github import Github, GithubException
+from mcp.server.fastmcp import Context, FastMCP  # noqa: E402
+from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 
-from mcp.server.fastmcp import Context, FastMCP
-from mcp.server.transport_security import TransportSecuritySettings
-
-from core.config import DocConfig, resolve_config
-from core.backends import pick_backend
-from core.guards import validate_local_path, validate_repo_url
-from core.logging_config import REQUEST_ID_VAR, setup_logging
-from core.sources import GitSource, LocalSource, Source
-from core.file_traverser import FileTraverser
-from core.graph import app as workflow_app
-from core.doc_writer import DocumentationWriter
+from core.config import DocConfig, resolve_config  # noqa: E402
+from core.backends import pick_backend  # noqa: E402
+from core.guards import validate_local_path, validate_repo_url  # noqa: E402
+from core.logging_config import REQUEST_ID_VAR, setup_logging  # noqa: E402
+from core.sources import GitSource, LocalSource, Source  # noqa: E402
+from core.file_traverser import FileTraverser  # noqa: E402
+from core.graph import app as workflow_app  # noqa: E402
+from core.doc_writer import DocumentationWriter  # noqa: E402
 
 setup_logging(json_mode=os.getenv("LOG_FORMAT", "").lower() == "json")
 logger = logging.getLogger(__name__)
@@ -61,7 +60,9 @@ async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "version": __version__})
 
 
-async def _run_pipeline(source: Source, output_dir: str, config: DocConfig, ctx: Context | None) -> str:
+async def _run_pipeline(
+    source: Source, output_dir: str, config: DocConfig, ctx: Context | None
+) -> str:
     try:
         repo_path = source.prepare()
         files = list(
@@ -154,6 +155,10 @@ async def _push_docs_pr(
             target = f"docs/{fname}"
             try:
                 existing = gh_repo.get_contents(target, ref=branch)
+                # get_contents returns ContentFile | list[ContentFile];
+                # for a single file path it is always a single object.
+                if isinstance(existing, list):
+                    existing = existing[0]
                 gh_repo.update_file(
                     target, commit_message, content, existing.sha, branch=branch
                 )
@@ -188,7 +193,7 @@ async def document_local_project(
     output_dir: str = "docs",
     provider: str | None = None,
     model: str | None = None,
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     """Generate documentation for a project folder on the local machine.
 
@@ -231,7 +236,7 @@ async def document_repo(
     push_as_pr: bool = False,
     pr_branch: str | None = None,
     pr_title: str | None = None,
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     """Generate documentation for a GitHub repository (clones it first).
 
