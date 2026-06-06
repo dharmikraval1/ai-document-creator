@@ -1,4 +1,6 @@
 import asyncio
+import json
+from unittest.mock import AsyncMock, MagicMock, patch
 
 
 def test_document_local_project_uses_fake_backend(tmp_path, monkeypatch):
@@ -101,3 +103,54 @@ def test_document_local_project_empty_dir_returns_no_files(tmp_path):
         server.document_local_project(path=str(empty), output_dir=str(tmp_path / "o"), ctx=None)
     )
     assert result == "No files found to document."
+
+
+# ── new tests for Task 7 hardening ───────────────────────────────────────────
+
+async def test_health_endpoint_returns_ok():
+    from mcp_server_impl import health
+
+    class _Req:
+        pass
+
+    response = await health(_Req())
+    data = json.loads(response.body)
+    assert data == {"status": "ok", "version": "2.0.0"}
+
+
+async def test_document_local_project_times_out(monkeypatch, tmp_path):
+    import mcp_server_impl as server
+    from core.config import DocConfig
+
+    async def _slow(*_a, **_kw):
+        await asyncio.sleep(999)
+        return "never"
+
+    monkeypatch.setattr(server, "_run_pipeline", _slow)
+    monkeypatch.setattr(server, "validate_local_path", lambda _p: None)
+    monkeypatch.setattr(
+        server, "resolve_config", lambda **_kw: DocConfig(pipeline_timeout_s=1)
+    )
+
+    result = await server.document_local_project(path=str(tmp_path), ctx=None)
+    assert "timed out" in result
+
+
+async def test_document_local_project_rejects_bad_path(monkeypatch):
+    import mcp_server_impl as server
+
+    def _raise(_p):
+        raise ValueError("outside LOCAL_ROOT")
+
+    monkeypatch.setattr(server, "validate_local_path", _raise)
+    result = await server.document_local_project(path="/etc", ctx=None)
+    assert "Error:" in result
+    assert "outside" in result
+
+
+async def test_document_repo_rejects_http_url():
+    import mcp_server_impl as server
+
+    result = await server.document_repo(repo_url="http://github.com/user/repo", ctx=None)
+    assert "Error:" in result
+    assert "https" in result
