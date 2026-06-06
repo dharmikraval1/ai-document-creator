@@ -1,5 +1,7 @@
 # tests/test_sources.py
 import os
+import socket
+from unittest.mock import patch
 
 import pytest
 
@@ -66,3 +68,21 @@ def test_local_source_rejects_file_path(tmp_path):
     src = LocalSource(str(f))
     with pytest.raises(FileNotFoundError):
         src.prepare()
+
+
+def test_gitsource_prepare_rejects_http_url():
+    src = GitSource("http://github.com/user/repo")
+    with pytest.raises(ValueError, match="Only https://"):
+        src.prepare()
+    src.cleanup()
+
+
+def test_gitsource_prepare_rejects_private_ip():
+    with patch(
+        "core.guards.socket.getaddrinfo",
+        return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0))],
+    ):
+        src = GitSource("https://internal.corp.example/repo")
+        with pytest.raises(ValueError, match="private or reserved"):
+            src.prepare()
+        src.cleanup()
