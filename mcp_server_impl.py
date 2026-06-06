@@ -26,7 +26,7 @@ from core.config import DocConfig, resolve_config
 from core.backends import pick_backend
 from core.guards import validate_local_path, validate_repo_url
 from core.logging_config import REQUEST_ID_VAR, setup_logging
-from core.sources import GitSource, LocalSource
+from core.sources import GitSource, LocalSource, Source
 from core.file_traverser import FileTraverser
 from core.graph import app as workflow_app
 from core.doc_writer import DocumentationWriter
@@ -61,7 +61,7 @@ async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "version": __version__})
 
 
-async def _run_pipeline(source, output_dir: str, config: DocConfig, ctx) -> str:
+async def _run_pipeline(source: Source, output_dir: str, config: DocConfig, ctx: Context | None) -> str:
     try:
         repo_path = source.prepare()
         files = list(
