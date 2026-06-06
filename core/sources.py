@@ -61,9 +61,13 @@ class GitSource(Source):
     def prepare(self) -> str:
         from git import Repo
 
+        from .guards import validate_repo_size, validate_repo_url
+
+        validate_repo_url(self.repo_url)
         logger.info("Cloning %s to %s", mask_token(self.repo_url), self.temp_dir)
         try:
             Repo.clone_from(self.repo_url, self.temp_dir)
+            validate_repo_size(self.temp_dir)
             return self.temp_dir
         except Exception:
             self.cleanup()
@@ -73,11 +77,11 @@ class GitSource(Source):
         if not os.path.exists(self.temp_dir):
             return
 
-        def _on_exc(func, path, _exc):
+        def _on_error(func, path, _exc):
             try:
                 os.chmod(path, stat.S_IWRITE)
                 func(path)
             except Exception:
                 pass
 
-        shutil.rmtree(self.temp_dir, onexc=_on_exc)
+        shutil.rmtree(self.temp_dir, onerror=_on_error)
