@@ -6,25 +6,40 @@ import os
 import socket
 from urllib.parse import urlparse
 
-_PRIVATE_NETWORKS = (
-    ipaddress.ip_network("127.0.0.0/8"),
-    ipaddress.ip_network("10.0.0.0/8"),
-    ipaddress.ip_network("172.16.0.0/12"),
-    ipaddress.ip_network("192.168.0.0/16"),
-    ipaddress.ip_network("169.254.0.0/16"),
-    ipaddress.ip_network("100.64.0.0/10"),
-    ipaddress.ip_network("::1/128"),
-    ipaddress.ip_network("fc00::/7"),
-)
-
 _BLOCKED_HOSTNAMES = frozenset({"metadata.google.internal", "metadata.internal"})
+
+
+def _is_non_public(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """Return True if *ip* must not be contacted as a remote Git host.
+
+    Covers: loopback, private (RFC1918/ULA), link-local (v4 & v6),
+    carrier-NAT (100.64/10), multicast, reserved, unspecified, and
+    IPv4-mapped IPv6 addresses (e.g. ::ffff:10.0.0.1).
+    """
+    # Unwrap IPv4-mapped IPv6 so ::ffff:10.0.0.1 is treated as 10.0.0.1
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_multicast
+        or ip.is_reserved
+        or ip.is_unspecified
+    )
 
 
 def validate_repo_url(url: str) -> None:
     """Raise ValueError if *url* fails SSRF safety checks.
 
     Blocks non-HTTPS schemes and any URL that resolves to private, loopback,
-    link-local, carrier-NAT, or IPv6 unique-local address space.
+    link-local, carrier-NAT, multicast, reserved, or unspecified address space,
+    including IPv4-mapped IPv6 addresses (e.g. ::ffff:10.0.0.1).
+
+    Note: this guard validates the address at call time. If the caller uses a
+    separate DNS resolution (e.g. git clone), a sufficiently short-TTL DNS
+    rebinding attack can still occur. For high-security deployments, run the
+    server behind a network egress filter that enforces the same blocklist.
     """
     parsed = urlparse(url)
     if parsed.scheme != "https":
@@ -45,7 +60,7 @@ def validate_repo_url(url: str) -> None:
             ip = ipaddress.ip_address(sockaddr[0])
         except ValueError:
             continue
-        if any(ip in net for net in _PRIVATE_NETWORKS):
+        if _is_non_public(ip):
             raise ValueError(
                 f"Repository URL resolves to a private or reserved IP address "
                 f"({ip}), which is not permitted."
