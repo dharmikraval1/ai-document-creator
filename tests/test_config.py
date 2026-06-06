@@ -80,3 +80,14 @@ def test_resolve_config_accepts_falsy_overrides():
 def test_resolve_config_rejects_unknown_kwarg():
     with pytest.raises(TypeError):
         resolve_config(provider="anthropic", model_id="boom")
+
+
+def test_pipeline_timeout_defaults_to_300():
+    cfg = DocConfig()
+    assert cfg.pipeline_timeout_s == 300
+
+
+def test_resolve_config_reads_pipeline_timeout_from_env(monkeypatch):
+    monkeypatch.setenv("PIPELINE_TIMEOUT_S", "120")
+    cfg = resolve_config()
+    assert cfg.pipeline_timeout_s == 120
