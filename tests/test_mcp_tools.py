@@ -154,3 +154,100 @@ async def test_document_repo_rejects_http_url():
     result = await server.document_repo(repo_url="http://github.com/user/repo", ctx=None)
     assert "Error:" in result
     assert "https" in result
+
+
+# ── incremental caching tests (Task 2) ───────────────────────────────────────
+
+async def test_run_pipeline_returns_uptodate_when_all_unchanged(tmp_path):
+    from mcp_server_impl import _run_pipeline
+    from core.config import DocConfig
+
+    source = MagicMock()
+    source.prepare.return_value = str(tmp_path)
+    source.cleanup = MagicMock()
+
+    config = DocConfig(incremental=True)
+
+    with (
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.load_manifest", return_value={"a.py": "abc123"}),
+        patch("mcp_server_impl.filter_changed", return_value=([], ["a.py"])),
+        patch("mcp_server_impl.workflow_app") as mock_app,
+    ):
+        mock_ft.return_value.traverse.return_value = ["a.py"]
+        result = await _run_pipeline(source, str(tmp_path / "docs"), config, None)
+
+    assert "Up to Date" in result
+    mock_app.ainvoke.assert_not_called()
+    source.cleanup.assert_called_once()
+
+
+async def test_run_pipeline_only_invokes_changed_files(tmp_path):
+    from mcp_server_impl import _run_pipeline
+    from core.config import DocConfig
+
+    source = MagicMock()
+    source.prepare.return_value = str(tmp_path)
+    source.cleanup = MagicMock()
+
+    config = DocConfig(incremental=True)
+
+    fake_state = {"documents": {"changed.py": "# doc"}, "index_content": "index"}
+    fake_idx = {"index_content": "merged index"}
+
+    with (
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.load_manifest", return_value={"unchanged.py": "hash1"}),
+        patch("mcp_server_impl.filter_changed", return_value=(["changed.py"], ["unchanged.py"])),
+        patch("mcp_server_impl.workflow_app") as mock_app,
+        patch("mcp_server_impl._generate_index", new_callable=AsyncMock, return_value=fake_idx),
+        patch("mcp_server_impl._load_existing_doc", return_value="# existing doc"),
+        patch("mcp_server_impl.pick_backend", return_value=MagicMock()),
+        patch("mcp_server_impl.DocumentationWriter") as mock_dw,
+        patch("mcp_server_impl.compute_hashes", return_value={"changed.py": "h1", "unchanged.py": "hash1"}),
+        patch("mcp_server_impl.save_manifest"),
+    ):
+        mock_ft.return_value.traverse.return_value = ["changed.py", "unchanged.py"]
+        mock_app.ainvoke = AsyncMock(return_value=fake_state)
+        mock_dw.return_value.write_docs = MagicMock()
+
+        result = await _run_pipeline(source, str(tmp_path / "docs"), config, None)
+
+    # ainvoke called with only changed files
+    call_args = mock_app.ainvoke.call_args[0][0]
+    assert call_args["files"] == ["changed.py"]
+    assert "Documentation Generation Report" in result
+    source.cleanup.assert_called_once()
+
+
+async def test_run_pipeline_saves_manifest_after_run(tmp_path):
+    from mcp_server_impl import _run_pipeline
+    from core.config import DocConfig
+
+    source = MagicMock()
+    source.prepare.return_value = str(tmp_path)
+    source.cleanup = MagicMock()
+
+    config = DocConfig(incremental=False)
+
+    fake_state = {"documents": {"main.py": "# doc"}, "index_content": "index"}
+    fake_hashes = {"main.py": "deadbeef"}
+
+    with (
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.workflow_app") as mock_app,
+        patch("mcp_server_impl.pick_backend", return_value=MagicMock()),
+        patch("mcp_server_impl.DocumentationWriter") as mock_dw,
+        patch("mcp_server_impl.compute_hashes", return_value=fake_hashes),
+        patch("mcp_server_impl.save_manifest") as mock_save,
+    ):
+        mock_ft.return_value.traverse.return_value = ["main.py"]
+        mock_app.ainvoke = AsyncMock(return_value=fake_state)
+        mock_dw.return_value.write_docs = MagicMock()
+
+        await _run_pipeline(source, str(tmp_path / "docs"), config, None)
+
+    mock_save.assert_called_once()
+    saved_hashes, saved_dir = mock_save.call_args[0]
+    assert saved_hashes == fake_hashes
+    source.cleanup.assert_called_once()
