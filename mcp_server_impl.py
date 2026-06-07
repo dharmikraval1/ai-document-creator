@@ -27,8 +27,9 @@ from core.guards import validate_local_path, validate_repo_url  # noqa: E402
 from core.logging_config import REQUEST_ID_VAR, setup_logging  # noqa: E402
 from core.sources import GitSource, LocalSource, Source  # noqa: E402
 from core.file_traverser import FileTraverser  # noqa: E402
-from core.graph import app as workflow_app  # noqa: E402
+from core.graph import app as workflow_app, generate_index as _generate_index  # noqa: E402
 from core.doc_writer import DocumentationWriter  # noqa: E402
+from core.cache import compute_hashes, filter_changed, load_manifest, save_manifest  # noqa: E402
 
 setup_logging(json_mode=os.getenv("LOG_FORMAT", "").lower() == "json")
 logger = logging.getLogger(__name__)
@@ -60,16 +61,41 @@ async def health(_request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok", "version": __version__})
 
 
+def _load_existing_doc(file_path: str, output_dir: str) -> str | None:
+    doc_path = os.path.join(output_dir, file_path + ".md")
+    try:
+        with open(doc_path, "r", encoding="utf-8") as fh:
+            return fh.read()
+    except OSError:
+        return None
+
+
 async def _run_pipeline(
     source: Source, output_dir: str, config: DocConfig, ctx: Context | None
 ) -> str:
     try:
         repo_path = source.prepare()
-        files = list(
+        all_files = list(
             FileTraverser(repo_path, max_file_size_kb=config.max_file_size_kb).traverse()
         )
-        if not files:
+        if not all_files:
             return "No files found to document."
+
+        abs_output_dir = os.path.abspath(output_dir)
+
+        if config.incremental:
+            manifest = load_manifest(abs_output_dir)
+            changed_files, unchanged_files = filter_changed(all_files, repo_path, manifest)
+        else:
+            changed_files, unchanged_files = list(all_files), []
+
+        if not changed_files:
+            n = len(unchanged_files)
+            return (
+                "# Documentation Up to Date\n\n"
+                f"All {n} file{'s are' if n != 1 else ' is'} unchanged"
+                " — no regeneration needed.\n"
+            )
 
         effective_config = DocConfig() if _BYOK_ONLY else config
         backend = pick_backend(effective_config, ctx=ctx)
@@ -77,7 +103,7 @@ async def _run_pipeline(
         final_state = await workflow_app.ainvoke(
             {
                 "repo_path": repo_path,
-                "files": files,
+                "files": changed_files,
                 "documents": {},
                 "index_content": "",
                 "backend": backend,
@@ -85,20 +111,43 @@ async def _run_pipeline(
             }
         )
 
-        abs_output_dir = os.path.abspath(output_dir)
-        DocumentationWriter(abs_output_dir).write_docs(
-            final_state["documents"], final_state["index_content"]
-        )
+        if unchanged_files:
+            all_docs: dict[str, str] = {}
+            for fp in unchanged_files:
+                existing = _load_existing_doc(fp, abs_output_dir)
+                if existing is not None:
+                    all_docs[fp] = existing
+            all_docs.update(final_state["documents"])
+            idx = await _generate_index(
+                {
+                    "repo_path": repo_path,
+                    "files": list(all_docs.keys()),
+                    "documents": all_docs,
+                    "index_content": "",
+                    "backend": backend,
+                    "max_concurrency": config.max_concurrency,
+                }
+            )
+            index_content = idx["index_content"]
+            docs_to_write = final_state["documents"]
+        else:
+            index_content = final_state["index_content"]
+            docs_to_write = final_state["documents"]
 
-        num_docs = len(final_state.get("documents", {}))
+        DocumentationWriter(abs_output_dir).write_docs(docs_to_write, index_content)
+        save_manifest(compute_hashes(all_files, repo_path), abs_output_dir)
+
+        num_changed = len(docs_to_write)
+        num_unchanged = len(unchanged_files)
         return (
             "# Documentation Generation Report\n\n"
-            f"- **Files Processed**: {len(files)}\n"
-            f"- **Documentation Pages Created**: {num_docs}\n"
+            f"- **Files Processed**: {len(changed_files)}\n"
+            f"- **Unchanged (skipped)**: {num_unchanged}\n"
+            f"- **Documentation Pages Created**: {num_changed}\n"
             f"- **Local Output Path**: `{abs_output_dir}`\n\n"
             "## Generated README.md Content\n\n"
             "```markdown\n"
-            f"{final_state.get('index_content', '')}\n"
+            f"{index_content}\n"
             "```\n"
         )
     except Exception as exc:
@@ -193,6 +242,7 @@ async def document_local_project(
     output_dir: str = "docs",
     provider: str | None = None,
     model: str | None = None,
+    incremental: bool = True,
     ctx: Context | None = None,
 ) -> str:
     """Generate documentation for a project folder on the local machine.
@@ -203,6 +253,7 @@ async def document_local_project(
         provider: LLM provider (anthropic/openai/azure/bedrock/ollama). Auto-detected
             from env if omitted; falls back to host sampling when no key is configured.
         model: Model name override (uses provider default when omitted).
+        incremental: Skip unchanged files using content-hash caching.
     """
     REQUEST_ID_VAR.set(uuid.uuid4().hex[:8])
     logger.info("document_local_project started path=%s", path)
@@ -212,7 +263,7 @@ async def document_local_project(
     except ValueError as exc:
         return f"Error: {exc}"
 
-    config = resolve_config(provider=provider, model=model)
+    config = resolve_config(provider=provider, model=model, incremental=incremental)
     async with _pipeline_semaphore:
         try:
             return await asyncio.wait_for(
@@ -233,6 +284,7 @@ async def document_repo(
     github_token: str | None = None,
     provider: str | None = None,
     model: str | None = None,
+    incremental: bool = True,
     push_as_pr: bool = False,
     pr_branch: str | None = None,
     pr_title: str | None = None,
@@ -246,6 +298,7 @@ async def document_repo(
         github_token: Token for private repos (falls back to GITHUB_TOKEN env var).
         provider: LLM provider (anthropic/openai/azure/bedrock/ollama).
         model: Model name override.
+        incremental: Skip unchanged files using content-hash caching.
         push_as_pr: If True, commit the generated docs to a branch and open a PR.
         pr_branch: Branch name (default: docs/ai-generated-{timestamp}).
         pr_title: PR title (default: "docs: AI-generated documentation").
@@ -258,7 +311,7 @@ async def document_repo(
     except ValueError as exc:
         return f"Error: {exc}"
 
-    config = resolve_config(provider=provider, model=model)
+    config = resolve_config(provider=provider, model=model, incremental=incremental)
     async with _pipeline_semaphore:
         try:
             report = await asyncio.wait_for(
