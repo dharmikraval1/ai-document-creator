@@ -404,7 +404,7 @@ async def check_doc_drift(
             lines.extend(f"- `{f}`" for f in sorted(deleted))
             lines.append("")
         lines.append(
-            f"Run `document_local_project` with `incremental=True` to update the documentation.\n"
+            "Run `document_local_project` with `incremental=True` to update the documentation.\n"
         )
 
     return "\n".join(lines)
