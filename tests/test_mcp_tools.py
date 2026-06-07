@@ -251,3 +251,62 @@ async def test_run_pipeline_saves_manifest_after_run(tmp_path):
     saved_hashes, saved_dir = mock_save.call_args[0]
     assert saved_hashes == fake_hashes
     source.cleanup.assert_called_once()
+
+
+# ── check_doc_drift tests (Task 3) ───────────────────────────────────────────
+
+async def test_check_doc_drift_no_manifest(tmp_path):
+    from mcp_server_impl import check_doc_drift
+    with (
+        patch("mcp_server_impl.validate_local_path"),
+        patch("mcp_server_impl.load_manifest", return_value=None),
+    ):
+        result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
+    assert "No manifest found" in result
+
+
+async def test_check_doc_drift_all_uptodate(tmp_path):
+    from mcp_server_impl import check_doc_drift
+    manifest = {"a.py": "hash1", "b.py": "hash2"}
+    with (
+        patch("mcp_server_impl.validate_local_path"),
+        patch("mcp_server_impl.load_manifest", return_value=manifest),
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.filter_changed", return_value=([], ["a.py", "b.py"])),
+    ):
+        mock_ft.return_value.traverse.return_value = ["a.py", "b.py"]
+        result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
+    assert "up to date" in result.lower()
+
+
+async def test_check_doc_drift_reports_modified(tmp_path):
+    from mcp_server_impl import check_doc_drift
+    manifest = {"a.py": "oldhash", "b.py": "hash2"}
+    with (
+        patch("mcp_server_impl.validate_local_path"),
+        patch("mcp_server_impl.load_manifest", return_value=manifest),
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.filter_changed", return_value=(["a.py"], ["b.py"])),
+    ):
+        mock_ft.return_value.traverse.return_value = ["a.py", "b.py"]
+        result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
+    assert "Modified" in result
+    assert "a.py" in result
+
+
+async def test_check_doc_drift_reports_new_and_deleted(tmp_path):
+    from mcp_server_impl import check_doc_drift
+    # manifest has old.py (now deleted), new.py is new
+    manifest = {"old.py": "hash_old"}
+    with (
+        patch("mcp_server_impl.validate_local_path"),
+        patch("mcp_server_impl.load_manifest", return_value=manifest),
+        patch("mcp_server_impl.FileTraverser") as mock_ft,
+        patch("mcp_server_impl.filter_changed", return_value=(["new.py"], [])),
+    ):
+        mock_ft.return_value.traverse.return_value = ["new.py"]
+        result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
+    assert "New Files" in result
+    assert "new.py" in result
+    assert "Deleted" in result
+    assert "old.py" in result
