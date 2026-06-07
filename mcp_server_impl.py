@@ -349,6 +349,67 @@ async def document_repo(
     return report
 
 
+@mcp.tool()
+async def check_doc_drift(
+    path: str = ".",
+    output_dir: str = "docs",
+) -> str:
+    """Report which source files have changed since the last documentation run.
+
+    Reads the content-hash manifest written by a previous documentation run and
+    compares it against the current file hashes.  No LLM calls are made.
+
+    Args:
+        path: Path to the local project directory (same value used when generating docs).
+        output_dir: Directory where docs were generated (must contain the manifest).
+    """
+    try:
+        validate_local_path(path)
+    except ValueError as exc:
+        return f"Error: {exc}"
+
+    abs_output_dir = os.path.abspath(output_dir)
+    manifest = load_manifest(abs_output_dir)
+    if manifest is None:
+        return (
+            "# Documentation Drift Check\n\n"
+            "No manifest found — run `document_local_project` first to establish a baseline.\n"
+        )
+
+    try:
+        all_files = list(FileTraverser(path, max_file_size_kb=None).traverse())
+    except Exception as exc:
+        return f"Error traversing {path}: {exc}"
+
+    changed, unchanged = filter_changed(all_files, path, manifest)
+
+    new_files = [f for f in changed if f not in manifest]
+    modified = [f for f in changed if f in manifest]
+    deleted = [f for f in manifest if f not in set(all_files)]
+
+    lines = ["# Documentation Drift Check\n"]
+    if not changed and not deleted:
+        lines.append("All files are up to date — no drift detected.\n")
+    else:
+        if new_files:
+            lines.append(f"## New Files ({len(new_files)})\n")
+            lines.extend(f"- `{f}`" for f in sorted(new_files))
+            lines.append("")
+        if modified:
+            lines.append(f"## Modified Files ({len(modified)})\n")
+            lines.extend(f"- `{f}`" for f in sorted(modified))
+            lines.append("")
+        if deleted:
+            lines.append(f"## Deleted Files ({len(deleted)})\n")
+            lines.extend(f"- `{f}`" for f in sorted(deleted))
+            lines.append("")
+        lines.append(
+            f"Run `document_local_project` with `incremental=True` to update the documentation.\n"
+        )
+
+    return "\n".join(lines)
+
+
 if __name__ == "__main__":
     port_env = os.getenv("PORT")
     if port_env:
