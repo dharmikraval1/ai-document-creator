@@ -14,6 +14,7 @@ output/
 temp/
 .venv/
 .pytest_cache/
-docs_output/*.egg-info/
+docs_output/
+*.egg-info/
 build/
 dist/
