@@ -35,7 +35,7 @@
   "remotes": [
     {
       "type": "streamable-http",
-      "url": "https://REPLACE-WITH-YOUR-DEPLOYMENT-HOST/mcp"
+      "url": "https://ai-document-creator-agdr.onrender.com/mcp"
     }
   ]
 }
