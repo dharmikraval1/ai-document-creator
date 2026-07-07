@@ -89,3 +89,24 @@ def test_gitsource_prepare_rejects_private_ip():
         with pytest.raises(ValueError, match="private or reserved"):
             src.prepare()
         src.cleanup()
+
+
+def test_gitsource_never_injects_token_into_non_github_host(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env-tok")
+    src = GitSource("https://gitlab.example.com/user/repo.git", github_token="tok")
+    assert src.repo_url == "https://gitlab.example.com/user/repo.git"
+    src.cleanup()
+    env_src = GitSource("https://evil.example.com/user/repo.git")
+    assert "env-tok" not in env_src.repo_url
+    env_src.cleanup()
+
+
+def test_gitsource_use_env_token_false_blocks_env_fallback(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env-tok")
+    src = GitSource("https://github.com/user/repo.git", use_env_token=False)
+    assert src.repo_url == "https://github.com/user/repo.git"
+    src.cleanup()
+    # explicit caller token still works
+    src2 = GitSource("https://github.com/user/repo.git", github_token="mine", use_env_token=False)
+    assert src2.repo_url == "https://mine@github.com/user/repo.git"
+    src2.cleanup()

@@ -85,3 +85,22 @@ live HTTP smoke test (health / initialize / SSE / rate-limit 429s).
   docs-in-CI on every push.
 - Output profiles (API reference / tutorial / architecture) + Mermaid diagrams.
 - Shared-store rate limiting + OAuth if the hosted tier grows beyond one instance.
+
+## Addendum — post-merge review pass (v2.1.1)
+
+A full review of PR #3 after merge surfaced three pre-existing gaps that became
+important with a public endpoint; all fixed and covered by tests (132 total):
+
+1. GitHub tokens are now only ever injected into `github.com` clone URLs —
+   never other hosts (token-exfiltration guard).
+2. The server's `GITHUB_TOKEN` is never used on behalf of remote callers
+   (neither for cloning nor `push_as_pr`) — they must send their own.
+3. `output_dir` is now sandboxed to `LOCAL_ROOT` in the local-FS tools.
+
+Also added: `render.yaml` blueprint (one-click deploy, auto-deploy on main,
+Render hostname auto-allowed via `RENDER_EXTERNAL_HOSTNAME`), `USAGE.md`
+step-by-step guide, `SECURITY.md`, `CONTRIBUTING.md`, and a PyPI
+trusted-publishing workflow (`publish.yml` — one-time setup at
+pypi.org → Manage → Publishing: repo `dharmikraval1/ai-document-creator`,
+workflow `publish.yml`, environment `pypi`; then publishing = creating a
+GitHub Release).
