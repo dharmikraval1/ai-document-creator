@@ -6,8 +6,8 @@ async def test_pipeline_generates_docs_and_index_with_fake_backend(tmp_path):
     (tmp_path / "a.py").write_text("print('hello')", encoding="utf-8")
     (tmp_path / "b.py").write_text("x = 1  # {not a format placeholder}", encoding="utf-8")
 
-    from core.backends import FakeBackend
-    from core.graph import app
+    from ai_doc_creator.core.backends import FakeBackend
+    from ai_doc_creator.core.graph import app
 
     state = {
         "repo_path": str(tmp_path),
@@ -26,8 +26,8 @@ async def test_pipeline_generates_docs_and_index_with_fake_backend(tmp_path):
 
 
 async def test_pipeline_isolates_unreadable_file(tmp_path):
-    from core.backends import FakeBackend
-    from core.graph import app
+    from ai_doc_creator.core.backends import FakeBackend
+    from ai_doc_creator.core.graph import app
 
     state = {
         "repo_path": str(tmp_path),
@@ -44,8 +44,8 @@ async def test_pipeline_isolates_unreadable_file(tmp_path):
 async def test_generate_docs_respects_concurrency_limit(tmp_path):
     import asyncio
 
-    from core.backends import CompletionBackend
-    from core.graph import app
+    from ai_doc_creator.core.backends import CompletionBackend
+    from ai_doc_creator.core.graph import app
 
     for i in range(10):
         (tmp_path / f"f{i}.py").write_text(f"x = {i}", encoding="utf-8")
@@ -77,8 +77,8 @@ async def test_generate_docs_respects_concurrency_limit(tmp_path):
 
 
 async def test_backend_exception_is_isolated_per_file(tmp_path):
-    from core.backends import CompletionBackend
-    from core.graph import app
+    from ai_doc_creator.core.backends import CompletionBackend
+    from ai_doc_creator.core.graph import app
 
     (tmp_path / "a.py").write_text("x = 1", encoding="utf-8")
 
@@ -104,7 +104,7 @@ async def test_backend_exception_is_isolated_per_file(tmp_path):
 
 
 def test_extract_summary_keeps_inline_hashes():
-    from core.graph import _extract_summary
+    from ai_doc_creator.core.graph import _extract_summary
 
     doc = "### Summary\nLine one ### inline marker\nmore\n## Overview\nx"
     assert _extract_summary(doc) == "Line one ### inline marker\nmore"

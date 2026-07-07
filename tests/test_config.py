@@ -1,7 +1,7 @@
 # tests/test_config.py
 import pytest
 
-from core.config import DocConfig, detect_provider, resolve_config
+from ai_doc_creator.core.config import DocConfig, detect_provider, resolve_config
 
 _CRED_ENVS = ["ANTHROPIC_API_KEY", "OPENAI_API_KEY", "AZURE_OPENAI_API_KEY", "AWS_ACCESS_KEY_ID"]
 

@@ -1,21 +1,19 @@
-# main.py
+# ai_doc_creator/cli.py
 import argparse
 import asyncio
 import logging
-import os
 import sys
 
 from dotenv import load_dotenv
 
 load_dotenv()
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from core.config import resolve_config
-from core.backends import pick_backend, BackendError
-from core.sources import GitSource, LocalSource
-from core.file_traverser import FileTraverser
-from core.graph import app
-from core.doc_writer import DocumentationWriter
+from .core.config import resolve_config  # noqa: E402
+from .core.backends import pick_backend, BackendError  # noqa: E402
+from .core.sources import GitSource, LocalSource  # noqa: E402
+from .core.file_traverser import FileTraverser  # noqa: E402
+from .core.graph import app  # noqa: E402
+from .core.doc_writer import DocumentationWriter  # noqa: E402
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -58,7 +56,9 @@ def main():
     group.add_argument("--repo", help="GitHub repository URL")
     group.add_argument("--path", help="Local project directory")
     parser.add_argument("--output", default="docs", help="Output directory")
-    parser.add_argument("--provider", default=None, help="LLM provider (anthropic/openai/azure/bedrock/ollama)")
+    parser.add_argument(
+        "--provider", default=None, help="LLM provider (anthropic/openai/azure/bedrock/ollama)"
+    )
     parser.add_argument("--model", default=None, help="Model name override")
     args = parser.parse_args()
 

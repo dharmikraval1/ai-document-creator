@@ -1,17 +1,16 @@
-# mcp_server_impl.py
+# ai_doc_creator/server.py
 from __future__ import annotations
 
 import asyncio
 import logging
 import os
 import re
-import sys
+import tempfile
 import uuid
 
 from dotenv import load_dotenv
 
 load_dotenv()
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
 from starlette.requests import Request  # noqa: E402
 from starlette.responses import JSONResponse  # noqa: E402
@@ -21,20 +20,20 @@ from github import Github, GithubException  # noqa: E402
 from mcp.server.fastmcp import Context, FastMCP  # noqa: E402
 from mcp.server.transport_security import TransportSecuritySettings  # noqa: E402
 
-from core.config import DocConfig, resolve_config  # noqa: E402
-from core.backends import pick_backend  # noqa: E402
-from core.guards import validate_local_path, validate_repo_url  # noqa: E402
-from core.logging_config import REQUEST_ID_VAR, setup_logging  # noqa: E402
-from core.sources import GitSource, LocalSource, Source  # noqa: E402
-from core.file_traverser import FileTraverser  # noqa: E402
-from core.graph import app as workflow_app, generate_index as _generate_index  # noqa: E402
-from core.doc_writer import DocumentationWriter  # noqa: E402
-from core.cache import compute_hashes, filter_changed, load_manifest, save_manifest  # noqa: E402
+from . import __version__  # noqa: E402
+from .core.config import DocConfig, resolve_config  # noqa: E402
+from .core.backends import pick_backend  # noqa: E402
+from .core.guards import validate_local_path, validate_repo_url  # noqa: E402
+from .core.logging_config import REQUEST_ID_VAR, setup_logging  # noqa: E402
+from .core.sources import GitSource, LocalSource, Source  # noqa: E402
+from .core.file_traverser import FileTraverser  # noqa: E402
+from .core.graph import app as workflow_app, generate_index as _generate_index  # noqa: E402
+from .core.doc_writer import DocumentationWriter  # noqa: E402
+from .core.cache import compute_hashes, filter_changed, load_manifest, save_manifest  # noqa: E402
+from .core.ratelimit import RateLimitMiddleware  # noqa: E402
 
 setup_logging(json_mode=os.getenv("LOG_FORMAT", "").lower() == "json")
 logger = logging.getLogger(__name__)
-
-__version__ = "2.0.0"
 
 _BYOK_ONLY: bool = os.getenv("BYOK_ONLY", "").lower() == "true"
 _pipeline_semaphore = asyncio.Semaphore(int(os.getenv("MAX_CONCURRENT_PIPELINES", "3")))
@@ -45,6 +44,97 @@ def _parse_allowed_hosts() -> list[str]:
         "MCP_ALLOWED_HOSTS", "localhost,127.0.0.1,localhost:*,127.0.0.1:*"
     )
     return [h.strip() for h in raw.split(",") if h.strip()]
+
+
+def _is_remote() -> bool:
+    """True when serving over HTTP (PORT set) — i.e. callers are not the machine owner."""
+    return bool(os.getenv("PORT"))
+
+
+_LOCAL_TOOL_DISABLED_MSG = (
+    "Error: this tool reads the server's local filesystem and is disabled on "
+    "hosted deployments. Use `document_repo` with a repository URL instead, or "
+    "ask the operator to expose a directory explicitly via LOCAL_ROOT."
+)
+
+# Providers that accept a single per-request API key over headers.
+# (bedrock needs an AWS credential pair; ollama is a local, keyless runtime.)
+_BYOK_PROVIDERS = frozenset({"anthropic", "openai", "azure"})
+
+
+def _request_headers(ctx: Context | None) -> dict[str, str]:
+    """Lower-cased HTTP headers of the current request; {} on stdio."""
+    if ctx is None:
+        return {}
+    try:
+        request = ctx.request_context.request
+    except (AttributeError, ValueError):
+        return {}
+    if request is None or not hasattr(request, "headers"):
+        return {}
+    return {k.lower(): v for k, v in request.headers.items()}
+
+
+def _resolve_request_config(
+    provider: str | None,
+    model: str | None,
+    incremental: bool,
+    ctx: Context | None,
+) -> DocConfig | str:
+    """Build the request's DocConfig, folding in BYOK headers.
+
+    Keys travel in headers — never in tool arguments, which are model-visible
+    and transcript-logged. Explicit tool args win over headers for provider and
+    model. Returns an error string (not an exception) for invalid combinations
+    so tools can surface it directly.
+    """
+    headers = _request_headers(ctx)
+    api_key = headers.get("x-provider-api-key") or None
+    provider = provider or headers.get("x-provider") or None
+    model = model or headers.get("x-model") or None
+    if api_key:
+        provider = provider or "anthropic"
+        if provider not in _BYOK_PROVIDERS:
+            return (
+                f"Error: provider '{provider}' does not support per-request API "
+                f"keys; supported: {', '.join(sorted(_BYOK_PROVIDERS))}."
+            )
+    return resolve_config(
+        provider=provider, model=model, incremental=incremental, api_key=api_key
+    )
+
+
+def _inline_docs_section(output_dir: str) -> str:
+    """Render generated docs inline (for remote callers), capped by MAX_INLINE_DOC_KB."""
+    try:
+        cap_kb = int(os.getenv("MAX_INLINE_DOC_KB", "300"))
+    except ValueError:
+        cap_kb = 300
+    budget = cap_kb * 1024
+    lines = ["\n\n## Generated Documentation Files\n"]
+    skipped = 0
+    for root, _dirs, files in sorted(os.walk(output_dir)):
+        for fname in sorted(files):
+            if not fname.endswith(".md"):
+                continue
+            rel = os.path.relpath(os.path.join(root, fname), output_dir)
+            try:
+                with open(os.path.join(root, fname), "r", encoding="utf-8") as fh:
+                    content = fh.read()
+            except OSError:
+                continue
+            block = f"\n### `{rel}`\n\n{content}\n"
+            if len(block.encode("utf-8")) > budget:
+                skipped += 1
+                continue
+            budget -= len(block.encode("utf-8"))
+            lines.append(block)
+    if skipped:
+        lines.append(
+            f"\n> {skipped} file(s) omitted — response capped at {cap_kb} KB "
+            "(MAX_INLINE_DOC_KB). Use `push_as_pr=True` to receive everything.\n"
+        )
+    return "".join(lines)
 
 
 mcp = FastMCP(
@@ -97,7 +187,13 @@ async def _run_pipeline(
                 " — no regeneration needed.\n"
             )
 
-        effective_config = DocConfig() if _BYOK_ONLY else config
+        # BYOK_ONLY: the server's env keys are never spent on requests. A
+        # request carrying its own key keeps it (used explicitly, never via
+        # env); anything else drops to host sampling / a clear error.
+        if _BYOK_ONLY and not config.api_key:
+            effective_config = DocConfig()
+        else:
+            effective_config = config
         backend = pick_backend(effective_config, ctx=ctx)
 
         final_state = await workflow_app.ainvoke(
@@ -258,12 +354,17 @@ async def document_local_project(
     REQUEST_ID_VAR.set(uuid.uuid4().hex[:8])
     logger.info("document_local_project started path=%s", path)
 
+    if _is_remote() and not os.getenv("LOCAL_ROOT", "").strip():
+        return _LOCAL_TOOL_DISABLED_MSG
+
     try:
         validate_local_path(path)
     except ValueError as exc:
         return f"Error: {exc}"
 
-    config = resolve_config(provider=provider, model=model, incremental=incremental)
+    config = _resolve_request_config(provider, model, incremental, ctx)
+    if isinstance(config, str):
+        return config
     async with _pipeline_semaphore:
         try:
             return await asyncio.wait_for(
@@ -288,13 +389,16 @@ async def document_repo(
     push_as_pr: bool = False,
     pr_branch: str | None = None,
     pr_title: str | None = None,
+    return_docs: bool = False,
     ctx: Context | None = None,
 ) -> str:
     """Generate documentation for a GitHub repository (clones it first).
 
     Args:
         repo_url: HTTPS URL of the repository to document.
-        output_dir: Where to write the generated markdown files.
+        output_dir: Where to write the generated markdown files (ignored on
+            hosted deployments — docs go to a temp dir; use return_docs or
+            push_as_pr to receive them).
         github_token: Token for private repos (falls back to GITHUB_TOKEN env var).
         provider: LLM provider (anthropic/openai/azure/bedrock/ollama).
         model: Model name override.
@@ -302,6 +406,8 @@ async def document_repo(
         push_as_pr: If True, commit the generated docs to a branch and open a PR.
         pr_branch: Branch name (default: docs/ai-generated-{timestamp}).
         pr_title: PR title (default: "docs: AI-generated documentation").
+        return_docs: If True, include the generated markdown files inline in
+            the response (size-capped by MAX_INLINE_DOC_KB).
     """
     REQUEST_ID_VAR.set(uuid.uuid4().hex[:8])
     logger.info("document_repo started url=%s push_as_pr=%s", repo_url, push_as_pr)
@@ -311,42 +417,66 @@ async def document_repo(
     except ValueError as exc:
         return f"Error: {exc}"
 
-    config = resolve_config(provider=provider, model=model, incremental=incremental)
-    async with _pipeline_semaphore:
-        try:
-            report = await asyncio.wait_for(
-                _run_pipeline(
-                    GitSource(repo_url, github_token=github_token),
-                    output_dir,
-                    config,
-                    ctx,
-                ),
-                timeout=config.pipeline_timeout_s,
-            )
-        except asyncio.TimeoutError:
-            return (
-                f"Error: pipeline timed out after {config.pipeline_timeout_s}s. "
-                "The repository may be too large or the LLM provider is unresponsive."
-            )
+    # Remote callers must not choose server filesystem paths: write to a fresh
+    # per-request temp dir instead. No prior manifest exists there, so
+    # incremental caching is meaningless remotely — disable it.
+    remote = _is_remote()
+    tmp_root: str | None = None
+    if remote:
+        tmp_root = tempfile.mkdtemp(prefix="ai-doc-out-")
+        effective_output = os.path.join(tmp_root, "docs")
+        incremental = False
+    else:
+        effective_output = output_dir
 
-    if push_as_pr and not report.startswith("Error"):
-        token = github_token or os.getenv("GITHUB_TOKEN")
-        if not token:
-            report += (
-                "\n\nWarning: `push_as_pr=True` was requested but no GitHub token is "
-                "available — skipping PR creation."
-            )
-        else:
-            pr_url = await _push_docs_pr(
-                repo_url=repo_url,
-                docs_dir=os.path.abspath(output_dir),
-                branch=pr_branch or f"docs/ai-generated-{_timestamp()}",
-                title=pr_title or "docs: AI-generated documentation",
-                github_token=token,
-            )
-            report += f"\n\n## Pull Request\n\n{pr_url}"
+    config = _resolve_request_config(provider, model, incremental, ctx)
+    if isinstance(config, str):
+        return config
 
-    return report
+    try:
+        async with _pipeline_semaphore:
+            try:
+                report = await asyncio.wait_for(
+                    _run_pipeline(
+                        GitSource(repo_url, github_token=github_token),
+                        effective_output,
+                        config,
+                        ctx,
+                    ),
+                    timeout=config.pipeline_timeout_s,
+                )
+            except asyncio.TimeoutError:
+                return (
+                    f"Error: pipeline timed out after {config.pipeline_timeout_s}s. "
+                    "The repository may be too large or the LLM provider is unresponsive."
+                )
+
+        if push_as_pr and not report.startswith("Error"):
+            token = github_token or os.getenv("GITHUB_TOKEN")
+            if not token:
+                report += (
+                    "\n\nWarning: `push_as_pr=True` was requested but no GitHub token is "
+                    "available — skipping PR creation."
+                )
+            else:
+                pr_url = await _push_docs_pr(
+                    repo_url=repo_url,
+                    docs_dir=os.path.abspath(effective_output),
+                    branch=pr_branch or f"docs/ai-generated-{_timestamp()}",
+                    title=pr_title or "docs: AI-generated documentation",
+                    github_token=token,
+                )
+                report += f"\n\n## Pull Request\n\n{pr_url}"
+
+        if return_docs and not report.startswith("Error") and os.path.isdir(effective_output):
+            report += _inline_docs_section(os.path.abspath(effective_output))
+
+        return report
+    finally:
+        if tmp_root is not None:
+            import shutil
+
+            shutil.rmtree(tmp_root, ignore_errors=True)
 
 
 @mcp.tool()
@@ -363,6 +493,9 @@ async def check_doc_drift(
         path: Path to the local project directory (same value used when generating docs).
         output_dir: Directory where docs were generated (must contain the manifest).
     """
+    if _is_remote() and not os.getenv("LOCAL_ROOT", "").strip():
+        return _LOCAL_TOOL_DISABLED_MSG
+
     try:
         validate_local_path(path)
     except ValueError as exc:
@@ -410,13 +543,44 @@ async def check_doc_drift(
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
+def build_http_app(transport: str = "both"):
+    """Starlette app for HTTP serving.
+
+    transport: "streamable-http" (spec-current, at /mcp), "sse" (legacy, at
+    /sse + /messages/), or "both" (default) — streamable-http plus the SSE
+    routes so pre-migration clients of the hosted endpoint keep working.
+    """
+    if transport == "sse":
+        app = mcp.sse_app()
+    else:
+        # The streamable-http app owns the session-manager lifespan; adding the
+        # SSE routes onto it (rather than mounting two apps) keeps that intact.
+        app = mcp.streamable_http_app()
+        if transport == "both":
+            existing = {getattr(r, "path", None) for r in app.routes}
+            for route in mcp.sse_app().routes:
+                if getattr(route, "path", None) not in existing:
+                    app.router.routes.append(route)
+    app.add_middleware(RateLimitMiddleware)
+    return app
+
+
+def main() -> None:
     port_env = os.getenv("PORT")
     if port_env:
-        logger.info("Starting MCP server in SSE mode on port %s", port_env)
-        mcp.settings.host = "0.0.0.0"
-        mcp.settings.port = int(port_env)
-        mcp.run(transport="sse")
+        import uvicorn
+
+        transport = os.getenv("MCP_TRANSPORT", "both").strip().lower() or "both"
+        logger.info(
+            "Starting MCP server in HTTP mode on port %s (transport=%s)",
+            port_env,
+            transport,
+        )
+        uvicorn.run(build_http_app(transport), host="0.0.0.0", port=int(port_env))
     else:
         logger.info("Starting MCP server in stdio mode")
         mcp.run()
+
+
+if __name__ == "__main__":
+    main()
