@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, fields
+from dataclasses import dataclass, field, fields
 
 DEFAULT_MODELS = {
     "anthropic": "claude-sonnet-4-6",
@@ -38,6 +38,10 @@ class DocConfig:
     max_file_size_kb: int = 100
     max_concurrency: int = 8
     pipeline_timeout_s: int = 300
+    # Per-request provider key (BYOK). repr=False so it can never leak via
+    # logging/str(config); it is handed to the provider client explicitly and
+    # never written to the environment.
+    api_key: str | None = field(default=None, repr=False)
 
     @property
     def has_provider(self) -> bool:

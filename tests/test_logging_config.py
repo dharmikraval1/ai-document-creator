@@ -2,7 +2,7 @@
 import json
 import logging
 
-from core.logging_config import REQUEST_ID_VAR, setup_logging
+from ai_doc_creator.core.logging_config import REQUEST_ID_VAR, setup_logging
 
 
 def test_plain_format_does_not_crash():

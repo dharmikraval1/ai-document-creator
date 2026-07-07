@@ -6,8 +6,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 def test_document_local_project_uses_fake_backend(tmp_path, monkeypatch):
     (tmp_path / "main.py").write_text("print('hi')", encoding="utf-8")
 
-    import mcp_server_impl as server
-    from core.backends import FakeBackend
+    import ai_doc_creator.server as server
+    from ai_doc_creator.core.backends import FakeBackend
 
     # Force a deterministic backend regardless of env/host.
     monkeypatch.setattr(server, "pick_backend", lambda config, ctx=None: FakeBackend(
@@ -31,8 +31,8 @@ def test_document_local_project_uses_fake_backend(tmp_path, monkeypatch):
 def test_document_repo_threads_github_token_and_cleans_up(tmp_path, monkeypatch):
     (tmp_path / "x.py").write_text("y = 1", encoding="utf-8")
 
-    import mcp_server_impl as server
-    from core.backends import FakeBackend
+    import ai_doc_creator.server as server
+    from ai_doc_creator.core.backends import FakeBackend
 
     created = {}
 
@@ -67,7 +67,7 @@ def test_document_repo_threads_github_token_and_cleans_up(tmp_path, monkeypatch)
 def test_pipeline_cleans_up_source_on_failure(tmp_path, monkeypatch):
     (tmp_path / "x.py").write_text("y = 1", encoding="utf-8")
 
-    import mcp_server_impl as server
+    import ai_doc_creator.server as server
 
     cleaned = {"value": False}
 
@@ -95,7 +95,7 @@ def test_pipeline_cleans_up_source_on_failure(tmp_path, monkeypatch):
 
 
 def test_document_local_project_empty_dir_returns_no_files(tmp_path):
-    import mcp_server_impl as server
+    import ai_doc_creator.server as server
 
     empty = tmp_path / "empty"
     empty.mkdir()
@@ -108,19 +108,19 @@ def test_document_local_project_empty_dir_returns_no_files(tmp_path):
 # ── new tests for Task 7 hardening ───────────────────────────────────────────
 
 async def test_health_endpoint_returns_ok():
-    from mcp_server_impl import health
+    from ai_doc_creator.server import health
 
     class _Req:
         pass
 
     response = await health(_Req())
     data = json.loads(response.body)
-    assert data == {"status": "ok", "version": "2.0.0"}
+    assert data == {"status": "ok", "version": "2.1.0"}
 
 
 async def test_document_local_project_times_out(monkeypatch, tmp_path):
-    import mcp_server_impl as server
-    from core.config import DocConfig
+    import ai_doc_creator.server as server
+    from ai_doc_creator.core.config import DocConfig
 
     async def _slow(*_a, **_kw):
         await asyncio.sleep(999)
@@ -137,7 +137,7 @@ async def test_document_local_project_times_out(monkeypatch, tmp_path):
 
 
 async def test_document_local_project_rejects_bad_path(monkeypatch):
-    import mcp_server_impl as server
+    import ai_doc_creator.server as server
 
     def _raise(_p):
         raise ValueError("outside LOCAL_ROOT")
@@ -149,7 +149,7 @@ async def test_document_local_project_rejects_bad_path(monkeypatch):
 
 
 async def test_document_repo_rejects_http_url():
-    import mcp_server_impl as server
+    import ai_doc_creator.server as server
 
     result = await server.document_repo(repo_url="http://github.com/user/repo", ctx=None)
     assert "Error:" in result
@@ -159,8 +159,8 @@ async def test_document_repo_rejects_http_url():
 # ── incremental caching tests (Task 2) ───────────────────────────────────────
 
 async def test_run_pipeline_returns_uptodate_when_all_unchanged(tmp_path):
-    from mcp_server_impl import _run_pipeline
-    from core.config import DocConfig
+    from ai_doc_creator.server import _run_pipeline
+    from ai_doc_creator.core.config import DocConfig
 
     source = MagicMock()
     source.prepare.return_value = str(tmp_path)
@@ -169,10 +169,10 @@ async def test_run_pipeline_returns_uptodate_when_all_unchanged(tmp_path):
     config = DocConfig(incremental=True)
 
     with (
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.load_manifest", return_value={"a.py": "abc123"}),
-        patch("mcp_server_impl.filter_changed", return_value=([], ["a.py"])),
-        patch("mcp_server_impl.workflow_app") as mock_app,
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.load_manifest", return_value={"a.py": "abc123"}),
+        patch("ai_doc_creator.server.filter_changed", return_value=([], ["a.py"])),
+        patch("ai_doc_creator.server.workflow_app") as mock_app,
     ):
         mock_ft.return_value.traverse.return_value = ["a.py"]
         result = await _run_pipeline(source, str(tmp_path / "docs"), config, None)
@@ -183,8 +183,8 @@ async def test_run_pipeline_returns_uptodate_when_all_unchanged(tmp_path):
 
 
 async def test_run_pipeline_only_invokes_changed_files(tmp_path):
-    from mcp_server_impl import _run_pipeline
-    from core.config import DocConfig
+    from ai_doc_creator.server import _run_pipeline
+    from ai_doc_creator.core.config import DocConfig
 
     source = MagicMock()
     source.prepare.return_value = str(tmp_path)
@@ -196,16 +196,16 @@ async def test_run_pipeline_only_invokes_changed_files(tmp_path):
     fake_idx = {"index_content": "merged index"}
 
     with (
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.load_manifest", return_value={"unchanged.py": "hash1"}),
-        patch("mcp_server_impl.filter_changed", return_value=(["changed.py"], ["unchanged.py"])),
-        patch("mcp_server_impl.workflow_app") as mock_app,
-        patch("mcp_server_impl._generate_index", new_callable=AsyncMock, return_value=fake_idx),
-        patch("mcp_server_impl._load_existing_doc", return_value="# existing doc"),
-        patch("mcp_server_impl.pick_backend", return_value=MagicMock()),
-        patch("mcp_server_impl.DocumentationWriter") as mock_dw,
-        patch("mcp_server_impl.compute_hashes", return_value={"changed.py": "h1", "unchanged.py": "hash1"}),
-        patch("mcp_server_impl.save_manifest"),
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.load_manifest", return_value={"unchanged.py": "hash1"}),
+        patch("ai_doc_creator.server.filter_changed", return_value=(["changed.py"], ["unchanged.py"])),
+        patch("ai_doc_creator.server.workflow_app") as mock_app,
+        patch("ai_doc_creator.server._generate_index", new_callable=AsyncMock, return_value=fake_idx),
+        patch("ai_doc_creator.server._load_existing_doc", return_value="# existing doc"),
+        patch("ai_doc_creator.server.pick_backend", return_value=MagicMock()),
+        patch("ai_doc_creator.server.DocumentationWriter") as mock_dw,
+        patch("ai_doc_creator.server.compute_hashes", return_value={"changed.py": "h1", "unchanged.py": "hash1"}),
+        patch("ai_doc_creator.server.save_manifest"),
     ):
         mock_ft.return_value.traverse.return_value = ["changed.py", "unchanged.py"]
         mock_app.ainvoke = AsyncMock(return_value=fake_state)
@@ -221,8 +221,8 @@ async def test_run_pipeline_only_invokes_changed_files(tmp_path):
 
 
 async def test_run_pipeline_saves_manifest_after_run(tmp_path):
-    from mcp_server_impl import _run_pipeline
-    from core.config import DocConfig
+    from ai_doc_creator.server import _run_pipeline
+    from ai_doc_creator.core.config import DocConfig
 
     source = MagicMock()
     source.prepare.return_value = str(tmp_path)
@@ -234,12 +234,12 @@ async def test_run_pipeline_saves_manifest_after_run(tmp_path):
     fake_hashes = {"main.py": "deadbeef"}
 
     with (
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.workflow_app") as mock_app,
-        patch("mcp_server_impl.pick_backend", return_value=MagicMock()),
-        patch("mcp_server_impl.DocumentationWriter") as mock_dw,
-        patch("mcp_server_impl.compute_hashes", return_value=fake_hashes),
-        patch("mcp_server_impl.save_manifest") as mock_save,
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.workflow_app") as mock_app,
+        patch("ai_doc_creator.server.pick_backend", return_value=MagicMock()),
+        patch("ai_doc_creator.server.DocumentationWriter") as mock_dw,
+        patch("ai_doc_creator.server.compute_hashes", return_value=fake_hashes),
+        patch("ai_doc_creator.server.save_manifest") as mock_save,
     ):
         mock_ft.return_value.traverse.return_value = ["main.py"]
         mock_app.ainvoke = AsyncMock(return_value=fake_state)
@@ -256,23 +256,23 @@ async def test_run_pipeline_saves_manifest_after_run(tmp_path):
 # ── check_doc_drift tests (Task 3) ───────────────────────────────────────────
 
 async def test_check_doc_drift_no_manifest(tmp_path):
-    from mcp_server_impl import check_doc_drift
+    from ai_doc_creator.server import check_doc_drift
     with (
-        patch("mcp_server_impl.validate_local_path"),
-        patch("mcp_server_impl.load_manifest", return_value=None),
+        patch("ai_doc_creator.server.validate_local_path"),
+        patch("ai_doc_creator.server.load_manifest", return_value=None),
     ):
         result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
     assert "No manifest found" in result
 
 
 async def test_check_doc_drift_all_uptodate(tmp_path):
-    from mcp_server_impl import check_doc_drift
+    from ai_doc_creator.server import check_doc_drift
     manifest = {"a.py": "hash1", "b.py": "hash2"}
     with (
-        patch("mcp_server_impl.validate_local_path"),
-        patch("mcp_server_impl.load_manifest", return_value=manifest),
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.filter_changed", return_value=([], ["a.py", "b.py"])),
+        patch("ai_doc_creator.server.validate_local_path"),
+        patch("ai_doc_creator.server.load_manifest", return_value=manifest),
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.filter_changed", return_value=([], ["a.py", "b.py"])),
     ):
         mock_ft.return_value.traverse.return_value = ["a.py", "b.py"]
         result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
@@ -280,13 +280,13 @@ async def test_check_doc_drift_all_uptodate(tmp_path):
 
 
 async def test_check_doc_drift_reports_modified(tmp_path):
-    from mcp_server_impl import check_doc_drift
+    from ai_doc_creator.server import check_doc_drift
     manifest = {"a.py": "oldhash", "b.py": "hash2"}
     with (
-        patch("mcp_server_impl.validate_local_path"),
-        patch("mcp_server_impl.load_manifest", return_value=manifest),
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.filter_changed", return_value=(["a.py"], ["b.py"])),
+        patch("ai_doc_creator.server.validate_local_path"),
+        patch("ai_doc_creator.server.load_manifest", return_value=manifest),
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.filter_changed", return_value=(["a.py"], ["b.py"])),
     ):
         mock_ft.return_value.traverse.return_value = ["a.py", "b.py"]
         result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))
@@ -295,14 +295,14 @@ async def test_check_doc_drift_reports_modified(tmp_path):
 
 
 async def test_check_doc_drift_reports_new_and_deleted(tmp_path):
-    from mcp_server_impl import check_doc_drift
+    from ai_doc_creator.server import check_doc_drift
     # manifest has old.py (now deleted), new.py is new
     manifest = {"old.py": "hash_old"}
     with (
-        patch("mcp_server_impl.validate_local_path"),
-        patch("mcp_server_impl.load_manifest", return_value=manifest),
-        patch("mcp_server_impl.FileTraverser") as mock_ft,
-        patch("mcp_server_impl.filter_changed", return_value=(["new.py"], [])),
+        patch("ai_doc_creator.server.validate_local_path"),
+        patch("ai_doc_creator.server.load_manifest", return_value=manifest),
+        patch("ai_doc_creator.server.FileTraverser") as mock_ft,
+        patch("ai_doc_creator.server.filter_changed", return_value=(["new.py"], [])),
     ):
         mock_ft.return_value.traverse.return_value = ["new.py"]
         result = await check_doc_drift(path=str(tmp_path), output_dir=str(tmp_path / "docs"))

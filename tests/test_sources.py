@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from core.sources import GitSource, LocalSource, Source, mask_token
+from ai_doc_creator.core.sources import GitSource, LocalSource, Source, mask_token
 
 
 def test_mask_token_hides_credentials():
@@ -44,7 +44,10 @@ def test_gitsource_handles_dot_git_and_existing_auth():
     b.cleanup()
 
 
-def test_gitsource_no_token_leaves_url_untouched():
+def test_gitsource_no_token_leaves_url_untouched(monkeypatch):
+    # GitSource falls back to GITHUB_TOKEN from the environment; remove it so
+    # the test asserts the no-token path regardless of where it runs.
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
     src = GitSource("https://github.com/user/repo.git", github_token=None)
     assert src.repo_url == "https://github.com/user/repo.git"
     src.cleanup()
@@ -79,7 +82,7 @@ def test_gitsource_prepare_rejects_http_url():
 
 def test_gitsource_prepare_rejects_private_ip():
     with patch(
-        "core.guards.socket.getaddrinfo",
+        "ai_doc_creator.core.guards.socket.getaddrinfo",
         return_value=[(socket.AF_INET, socket.SOCK_STREAM, 0, "", ("10.0.0.1", 0))],
     ):
         src = GitSource("https://internal.corp.example/repo")
