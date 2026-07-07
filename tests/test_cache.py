@@ -1,9 +1,5 @@
 # tests/test_cache.py
-import os
-
-import pytest
-
-from core.cache import (
+from ai_doc_creator.core.cache import (
     MANIFEST_FILENAME,
     compute_hashes,
     filter_changed,

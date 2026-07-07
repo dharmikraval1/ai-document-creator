@@ -1,7 +1,5 @@
 # tests/test_backends.py
-import pytest
-
-from core.backends import CompletionBackend, FakeBackend
+from ai_doc_creator.core.backends import CompletionBackend, FakeBackend
 
 
 async def test_fake_backend_returns_canned_response_and_records_calls():
@@ -30,7 +28,7 @@ class _FakeModel:
 
 
 async def test_provider_backend_invokes_model(monkeypatch):
-    import core.backends as backends
+    import ai_doc_creator.core.backends as backends
 
     captured = {}
 
@@ -41,7 +39,7 @@ async def test_provider_backend_invokes_model(monkeypatch):
 
     monkeypatch.setattr(backends, "init_chat_model", fake_init)
 
-    from core.config import DocConfig
+    from ai_doc_creator.core.config import DocConfig
     backend = backends.ProviderBackend(DocConfig(provider="anthropic"))
     out = await backend.complete("hi")
 
@@ -51,8 +49,8 @@ async def test_provider_backend_invokes_model(monkeypatch):
 
 
 def test_provider_backend_requires_model():
-    from core.backends import BackendError, ProviderBackend
-    from core.config import DocConfig
+    from ai_doc_creator.core.backends import BackendError, ProviderBackend
+    from ai_doc_creator.core.config import DocConfig
     with __import__("pytest").raises(BackendError):
         ProviderBackend(DocConfig())  # no provider -> has_provider is False
 
@@ -80,7 +78,7 @@ class _FakeCtx:
 
 
 async def test_sampling_backend_calls_host_session():
-    from core.backends import SamplingBackend
+    from ai_doc_creator.core.backends import SamplingBackend
     ctx = _FakeCtx()
     backend = SamplingBackend(ctx, max_tokens=256)
     out = await backend.complete("document this file")
@@ -89,60 +87,60 @@ async def test_sampling_backend_calls_host_session():
 
 
 async def test_pick_backend_prefers_provider_when_key_present(monkeypatch):
-    import core.backends as backends
+    import ai_doc_creator.core.backends as backends
     monkeypatch.setattr(backends, "init_chat_model", lambda *a, **k: _FakeModel())
-    from core.config import DocConfig
+    from ai_doc_creator.core.config import DocConfig
     backend = backends.pick_backend(DocConfig(provider="openai"), ctx=_FakeCtx())
     assert isinstance(backend, backends.CompletionBackend)
     assert not isinstance(backend, backends.SamplingBackend)
 
 
 def test_pick_backend_falls_back_to_sampling_with_ctx():
-    from core.backends import pick_backend, SamplingBackend
-    from core.config import DocConfig
+    from ai_doc_creator.core.backends import pick_backend, SamplingBackend
+    from ai_doc_creator.core.config import DocConfig
     backend = pick_backend(DocConfig(), ctx=_FakeCtx())
     assert isinstance(backend, SamplingBackend)
 
 
 def test_pick_backend_raises_clear_error_without_provider_or_ctx():
     import pytest
-    from core.backends import pick_backend, BackendError
-    from core.config import DocConfig
+    from ai_doc_creator.core.backends import pick_backend, BackendError
+    from ai_doc_creator.core.config import DocConfig
     with pytest.raises(BackendError) as exc:
         pick_backend(DocConfig(), ctx=None)
     assert "provider key" in str(exc.value)
 
 
 async def test_provider_backend_flattens_list_content(monkeypatch):
-    import core.backends as backends
+    import ai_doc_creator.core.backends as backends
 
     class _ListModel:
         async def ainvoke(self, prompt):
             return _FakeMessage([{"type": "text", "text": "A"}, {"type": "text", "text": "B"}])
 
     monkeypatch.setattr(backends, "init_chat_model", lambda **k: _ListModel())
-    from core.config import DocConfig
+    from ai_doc_creator.core.config import DocConfig
     backend = backends.ProviderBackend(DocConfig(provider="anthropic"))
     assert await backend.complete("hi") == "AB"
 
 
 async def test_provider_backend_ignores_non_text_blocks(monkeypatch):
-    import core.backends as backends
+    import ai_doc_creator.core.backends as backends
 
     class _MixedModel:
         async def ainvoke(self, prompt):
             return _FakeMessage([{"type": "text", "text": "keep"}, {"type": "image", "source": "x"}])
 
     monkeypatch.setattr(backends, "init_chat_model", lambda **k: _MixedModel())
-    from core.config import DocConfig
+    from ai_doc_creator.core.config import DocConfig
     backend = backends.ProviderBackend(DocConfig(provider="anthropic"))
     assert await backend.complete("hi") == "keep"
 
 
 async def test_provider_backend_azure_branch(monkeypatch):
     import langchain_openai
-    from core.config import DocConfig
-    from core.backends import ProviderBackend
+    from ai_doc_creator.core.config import DocConfig
+    from ai_doc_creator.core.backends import ProviderBackend
 
     captured = {}
 
@@ -162,7 +160,7 @@ async def test_provider_backend_azure_branch(monkeypatch):
 
 
 async def test_sampling_backend_non_text_falls_back_to_str():
-    from core.backends import SamplingBackend
+    from ai_doc_creator.core.backends import SamplingBackend
 
     class _Img:
         type = "image"
@@ -182,3 +180,33 @@ async def test_sampling_backend_non_text_falls_back_to_str():
 
     out = await SamplingBackend(_Ctx()).complete("x")
     assert out == "IMG-BLOCK"
+
+
+def test_provider_backend_passes_explicit_api_key(monkeypatch):
+    import ai_doc_creator.core.backends as backends
+    from ai_doc_creator.core.config import DocConfig
+
+    captured = {}
+
+    def fake_init(model=None, model_provider=None, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(backends, "init_chat_model", fake_init)
+    backends.ProviderBackend(DocConfig(provider="openai", api_key="sk-request-key"))
+    assert captured["api_key"] == "sk-request-key"
+
+
+def test_provider_backend_omits_api_key_kwarg_when_absent(monkeypatch):
+    import ai_doc_creator.core.backends as backends
+    from ai_doc_creator.core.config import DocConfig
+
+    captured = {}
+
+    def fake_init(model=None, model_provider=None, **kwargs):
+        captured.update(kwargs)
+        return object()
+
+    monkeypatch.setattr(backends, "init_chat_model", fake_init)
+    backends.ProviderBackend(DocConfig(provider="openai"))
+    assert "api_key" not in captured

@@ -1,6 +1,4 @@
 # tests/test_pr_push.py
-import asyncio
-import os
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -37,17 +35,17 @@ def _make_gh_repo(default_branch="main", existing_files=None):
 
 
 def test_parse_github_slug_standard_url():
-    from mcp_server_impl import _parse_github_slug
+    from ai_doc_creator.server import _parse_github_slug
     assert _parse_github_slug("https://github.com/owner/repo") == ("owner", "repo")
 
 
 def test_parse_github_slug_with_dot_git():
-    from mcp_server_impl import _parse_github_slug
+    from ai_doc_creator.server import _parse_github_slug
     assert _parse_github_slug("https://github.com/owner/repo.git") == ("owner", "repo")
 
 
 def test_parse_github_slug_invalid_url():
-    from mcp_server_impl import _parse_github_slug
+    from ai_doc_creator.server import _parse_github_slug
     with pytest.raises(ValueError, match="Cannot parse"):
         _parse_github_slug("https://gitlab.com/owner/repo")
 
@@ -63,8 +61,8 @@ async def test_push_docs_pr_creates_files_and_pr(tmp_path):
     mock_gh = MagicMock()
     mock_gh.return_value.get_repo.return_value = gh_repo
 
-    with patch("mcp_server_impl.Github", mock_gh):
-        from mcp_server_impl import _push_docs_pr
+    with patch("ai_doc_creator.server.Github", mock_gh):
+        from ai_doc_creator.server import _push_docs_pr
         result = await _push_docs_pr(
             repo_url="https://github.com/user/repo",
             docs_dir=str(tmp_path),
@@ -96,8 +94,8 @@ async def test_push_docs_pr_updates_existing_files(tmp_path):
     mock_gh = MagicMock()
     mock_gh.return_value.get_repo.return_value = gh_repo
 
-    with patch("mcp_server_impl.Github", mock_gh):
-        from mcp_server_impl import _push_docs_pr
+    with patch("ai_doc_creator.server.Github", mock_gh):
+        from ai_doc_creator.server import _push_docs_pr
         await _push_docs_pr(
             repo_url="https://github.com/user/repo",
             docs_dir=str(tmp_path),
@@ -112,7 +110,7 @@ async def test_push_docs_pr_updates_existing_files(tmp_path):
 
 @pytest.mark.asyncio
 async def test_document_repo_skips_pr_when_no_token(monkeypatch):
-    import mcp_server_impl as server
+    import ai_doc_creator.server as server
 
     async def _fake_pipeline(source, output_dir, config, ctx):
         return "# Documentation Generation Report\n\n- **Files Processed**: 1\n"
