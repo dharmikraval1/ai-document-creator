@@ -8,6 +8,7 @@ A step-by-step guide for every way to use the tool. Pick the path that fits you:
 | Wanting zero setup — just a URL | [2. Use a hosted endpoint](#2-use-a-hosted-endpoint) |
 | A terminal person | [3. Use the CLI](#3-use-the-cli) |
 | Hosting it for your team or the world | [4. Deploy your own server](#4-deploy-your-own-server) |
+| Wanting docs to update themselves in CI | [5. GitHub Action](#5-github-action--docs-that-update-themselves) |
 
 ---
 
@@ -155,6 +156,53 @@ docker run -p 8000:8000 -e PORT=8000 -e BYOK_ONLY=true \
 | `MAX_INLINE_DOC_KB` | `300` | Cap for `return_docs=True` responses |
 
 Full list in [`.env.example`](.env.example).
+
+---
+
+## 5. GitHub Action — docs that update themselves
+
+Add `.github/workflows/docs.yml` to **any repository** and its documentation
+regenerates on every push, arriving as a reviewable PR:
+
+```yaml
+name: Update docs
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  docs:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Generate documentation
+        uses: dharmikraval1/ai-document-creator@main   # pin to a tag (e.g. @v2) once released
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        # optional inputs:
+        # with:
+        #   path: "src"
+        #   output: "docs"
+        #   provider: "openai"
+        #   model: "gpt-4o-mini"
+
+      - name: Open PR with updated docs
+        uses: peter-evans/create-pull-request@v6
+        with:
+          commit-message: "docs: update AI-generated documentation"
+          title: "docs: update AI-generated documentation"
+          branch: docs/ai-generated
+          add-paths: docs
+```
+
+Setup: add your provider key once in the repo's
+**Settings → Secrets and variables → Actions** (e.g. `ANTHROPIC_API_KEY`).
+Any provider works — set the matching env var and `provider` input.
 
 ---
 
