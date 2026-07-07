@@ -1,0 +1,41 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-09-29/server.schema.json",
+  "name": "io.github.dharmikraval1/ai-document-creator",
+  "description": "AI-powered documentation generator for GitHub repos and local projects. Any LLM provider via your own key, or keyless via MCP host sampling.",
+  "status": "active",
+  "repository": {
+    "url": "https://github.com/dharmikraval1/ai-document-creator",
+    "source": "github"
+  },
+  "version": "2.1.0",
+  "packages": [
+    {
+      "registry_type": "pypi",
+      "identifier": "ai-doc-creator",
+      "version": "2.1.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environment_variables": [
+        {
+          "name": "ANTHROPIC_API_KEY",
+          "description": "Anthropic API key (optional — omit to use another provider or host sampling)",
+          "is_required": false,
+          "is_secret": true
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "description": "OpenAI API key (optional)",
+          "is_required": false,
+          "is_secret": true
+        }
+      ]
+    }
+  ],
+  "remotes": [
+    {
+      "type": "streamable-http",
+      "url": "https://REPLACE-WITH-YOUR-DEPLOYMENT-HOST/mcp"
+    }
+  ]
+}
