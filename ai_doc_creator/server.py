@@ -43,7 +43,13 @@ def _parse_allowed_hosts() -> list[str]:
     raw = os.getenv(
         "MCP_ALLOWED_HOSTS", "localhost,127.0.0.1,localhost:*,127.0.0.1:*"
     )
-    return [h.strip() for h in raw.split(",") if h.strip()]
+    hosts = [h.strip() for h in raw.split(",") if h.strip()]
+    # Render injects its public hostname; allow it automatically so a
+    # blueprint deploy works without hand-configuring MCP_ALLOWED_HOSTS.
+    render_host = os.getenv("RENDER_EXTERNAL_HOSTNAME", "").strip()
+    if render_host and render_host not in hosts:
+        hosts.append(render_host)
+    return hosts
 
 
 def _is_remote() -> bool:
@@ -359,6 +365,7 @@ async def document_local_project(
 
     try:
         validate_local_path(path)
+        validate_local_path(output_dir)
     except ValueError as exc:
         return f"Error: {exc}"
 
@@ -438,7 +445,13 @@ async def document_repo(
             try:
                 report = await asyncio.wait_for(
                     _run_pipeline(
-                        GitSource(repo_url, github_token=github_token),
+                        # Remote callers never inherit the server's GITHUB_TOKEN:
+                        # they must send their own for private repos.
+                        GitSource(
+                            repo_url,
+                            github_token=github_token,
+                            use_env_token=not remote,
+                        ),
                         effective_output,
                         config,
                         ctx,
@@ -452,11 +465,14 @@ async def document_repo(
                 )
 
         if push_as_pr and not report.startswith("Error"):
-            token = github_token or os.getenv("GITHUB_TOKEN")
+            # Same rule as cloning: the server's own GITHUB_TOKEN is never
+            # spent on behalf of remote callers.
+            token = github_token or (None if remote else os.getenv("GITHUB_TOKEN"))
             if not token:
                 report += (
                     "\n\nWarning: `push_as_pr=True` was requested but no GitHub token is "
-                    "available — skipping PR creation."
+                    "available — skipping PR creation. Pass `github_token` with permission "
+                    "to open pull requests on the repository."
                 )
             else:
                 pr_url = await _push_docs_pr(
@@ -498,6 +514,7 @@ async def check_doc_drift(
 
     try:
         validate_local_path(path)
+        validate_local_path(output_dir)
     except ValueError as exc:
         return f"Error: {exc}"
 

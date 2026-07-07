@@ -37,7 +37,7 @@ def test_document_repo_threads_github_token_and_cleans_up(tmp_path, monkeypatch)
     created = {}
 
     class _FakeGitSource:
-        def __init__(self, repo_url, github_token=None):
+        def __init__(self, repo_url, github_token=None, use_env_token=True):
             created["repo_url"] = repo_url
             created["github_token"] = github_token
 
@@ -115,7 +115,7 @@ async def test_health_endpoint_returns_ok():
 
     response = await health(_Req())
     data = json.loads(response.body)
-    assert data == {"status": "ok", "version": "2.1.0"}
+    assert data == {"status": "ok", "version": "2.1.1"}
 
 
 async def test_document_local_project_times_out(monkeypatch, tmp_path):
