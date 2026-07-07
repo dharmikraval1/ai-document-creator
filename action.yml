@@ -1,0 +1,50 @@
+name: "AI Document Creator"
+description: >-
+  Generate AI-powered documentation for your repository — per-file markdown
+  docs plus a synthesized README, written by any LLM provider.
+author: "Dharmik Raval"
+branding:
+  icon: "book-open"
+  color: "blue"
+
+inputs:
+  path:
+    description: "Project directory to document (relative to the workspace)"
+    required: false
+    default: "."
+  output:
+    description: "Directory to write the generated markdown into"
+    required: false
+    default: "docs"
+  provider:
+    description: "LLM provider: anthropic | openai | azure | bedrock | ollama (auto-detected from env keys when omitted)"
+    required: false
+    default: ""
+  model:
+    description: "Model name override (provider default when omitted)"
+    required: false
+    default: ""
+  python-version:
+    description: "Python version to run with"
+    required: false
+    default: "3.12"
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: ${{ inputs.python-version }}
+
+    - name: Install ai-doc-creator
+      shell: bash
+      run: python -m pip install --quiet "${{ github.action_path }}"
+
+    - name: Generate documentation
+      shell: bash
+      run: |
+        args=(--path "${{ inputs.path }}" --output "${{ inputs.output }}")
+        if [ -n "${{ inputs.provider }}" ]; then args+=(--provider "${{ inputs.provider }}"); fi
+        if [ -n "${{ inputs.model }}" ]; then args+=(--model "${{ inputs.model }}"); fi
+        ai-doc-creator "${args[@]}"

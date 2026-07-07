@@ -59,7 +59,17 @@ Point your MCP host at a deployment's Streamable HTTP endpoint and bring your ow
 
 Keys travel in **headers**, never in tool arguments, so they stay out of chat transcripts and logs. Legacy clients can still connect via `https://<host>/sse`.
 
-### Option C — CLI
+### Option C — GitHub Action (docs that update themselves)
+
+```yaml
+- uses: dharmikraval1/ai-document-creator@main
+  env:
+    ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+```
+
+Regenerates your repo's docs on every push — full workflow example in [USAGE.md](USAGE.md#5-github-action--docs-that-update-themselves).
+
+### Option D — CLI
 
 ```bash
 pip install ai-doc-creator     # or: pip install git+https://github.com/dharmikraval1/ai-document-creator
