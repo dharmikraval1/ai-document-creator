@@ -171,7 +171,7 @@ def test_document_repo_remote_ignores_output_dir_and_inlines_docs(tmp_path, monk
 
     monkeypatch.setenv("PORT", "8000")
     monkeypatch.setattr(server, "validate_repo_url", lambda url: None)
-    monkeypatch.setattr(server, "GitSource", lambda url, github_token=None: _FakeSource(project))
+    monkeypatch.setattr(server, "GitSource", lambda url, github_token=None, use_env_token=True: _FakeSource(project))
     monkeypatch.setattr(
         server,
         "pick_backend",
@@ -199,7 +199,7 @@ def test_document_repo_local_still_honors_output_dir(tmp_path, monkeypatch):
 
     monkeypatch.delenv("PORT", raising=False)
     monkeypatch.setattr(server, "validate_repo_url", lambda url: None)
-    monkeypatch.setattr(server, "GitSource", lambda url, github_token=None: _FakeSource(project))
+    monkeypatch.setattr(server, "GitSource", lambda url, github_token=None, use_env_token=True: _FakeSource(project))
     monkeypatch.setattr(
         server,
         "pick_backend",
@@ -245,3 +245,48 @@ def test_build_http_app_single_transports():
     assert "/sse" not in _route_paths(server.build_http_app("streamable-http"))
     sse_paths = _route_paths(server.build_http_app("sse"))
     assert "/sse" in sse_paths and "/mcp" not in sse_paths
+
+
+def test_remote_push_as_pr_never_uses_server_github_token(tmp_path, monkeypatch):
+    project = tmp_path / "proj"
+    project.mkdir()
+    (project / "app.py").write_text("print('x')", encoding="utf-8")
+
+    monkeypatch.setenv("PORT", "8000")
+    monkeypatch.setenv("GITHUB_TOKEN", "server-secret-token")
+    monkeypatch.setattr(server, "validate_repo_url", lambda url: None)
+    monkeypatch.setattr(
+        server, "GitSource", lambda url, github_token=None, use_env_token=True: _FakeSource(project)
+    )
+    monkeypatch.setattr(
+        server,
+        "pick_backend",
+        lambda config, ctx=None: FakeBackend("### Summary\nx\n### Overview\ny"),
+    )
+    pushed = []
+
+    async def fake_push(**kwargs):
+        pushed.append(kwargs)
+        return "http://pr"
+
+    monkeypatch.setattr(server, "_push_docs_pr", fake_push)
+
+    result = asyncio.run(
+        server.document_repo(repo_url="https://github.com/u/r", push_as_pr=True)
+    )
+    assert pushed == []  # server token must not be spent for remote callers
+    assert "no GitHub token" in result
+
+
+def test_local_tool_output_dir_sandboxed(tmp_path, monkeypatch):
+    _fake_project(tmp_path)
+    monkeypatch.setenv("LOCAL_ROOT", str(tmp_path))
+    result = asyncio.run(
+        server.document_local_project(path=str(tmp_path), output_dir="/etc/evil-docs")
+    )
+    assert result.startswith("Error") and "LOCAL_ROOT" in result
+
+
+def test_render_hostname_auto_allowed(monkeypatch):
+    monkeypatch.setenv("RENDER_EXTERNAL_HOSTNAME", "myapp.onrender.com")
+    assert "myapp.onrender.com" in server._parse_allowed_hosts()
