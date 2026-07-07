@@ -10,7 +10,7 @@ class FileTraverser:
         self,
         root_dir: str,
         ignore_patterns: Optional[List[str]] = None,
-        max_file_size_kb: int = 100,
+        max_file_size_kb: Optional[int] = 100,  # None = no size cap
     ):
         self.root_dir = root_dir
         self.max_file_size_kb = max_file_size_kb
@@ -62,7 +62,7 @@ class FileTraverser:
                 # Check file size
                 try:
                     size_kb = os.path.getsize(file_path) / 1024
-                    if size_kb > self.max_file_size_kb:
+                    if self.max_file_size_kb is not None and size_kb > self.max_file_size_kb:
                         continue
                 except Exception:
                     continue

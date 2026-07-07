@@ -1,0 +1,68 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ai-doc-creator"
+dynamic = ["version"]
+description = "AI-powered documentation generator for repos and local projects — MCP server + CLI, any LLM provider or keyless via MCP host sampling."
+readme = "README.md"
+license = { text = "MIT" }
+authors = [{ name = "Dharmik Raval" }]
+requires-python = ">=3.11"
+keywords = ["mcp", "documentation", "ai", "llm", "docs-generator", "model-context-protocol"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Documentation",
+    "Topic :: Software Development :: Documentation",
+]
+dependencies = [
+    "mcp>=1.10",
+    "langchain>=0.3",
+    "langchain-core>=0.3",
+    "langchain-community>=0.3",
+    "langchain-openai>=0.3",
+    "langchain-anthropic>=0.3",
+    "langchain-aws>=0.2",
+    "langchain-ollama>=0.2",
+    "langgraph>=0.3",
+    "openai>=1.60",
+    "boto3>=1.35",
+    "gitpython>=3.1",
+    "PyGithub>=2.5",
+    "python-dotenv>=1.0",
+    "pydantic>=2.9",
+    "tenacity>=8.5",
+    "tiktoken>=0.8",
+    "typing-extensions>=4.12",
+    "uvicorn>=0.30",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+    "flake8",
+    "black",
+    "isort",
+    "mypy",
+]
+
+[project.scripts]
+ai-doc-creator = "ai_doc_creator.cli:main"
+ai-doc-creator-mcp = "ai_doc_creator.server:main"
+
+[project.urls]
+Homepage = "https://github.com/dharmikraval1/ai-document-creator"
+Repository = "https://github.com/dharmikraval1/ai-document-creator"
+Issues = "https://github.com/dharmikraval1/ai-document-creator/issues"
+
+[tool.setuptools.packages.find]
+include = ["ai_doc_creator*"]
+
+[tool.setuptools.dynamic]
+version = { attr = "ai_doc_creator.__version__" }

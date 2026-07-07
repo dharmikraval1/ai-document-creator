@@ -2,8 +2,8 @@
 import pytest
 from tenacity import wait_none
 
-from core.backends import BackendError, CompletionBackend, FakeBackend
-from core.retry import with_retry
+from ai_doc_creator.core.backends import BackendError, CompletionBackend, FakeBackend
+from ai_doc_creator.core.retry import with_retry
 
 
 class _FailNTimes(CompletionBackend):

@@ -58,10 +58,15 @@ class ProviderBackend(CompletionBackend):
         else:
             # Pass model + provider separately so model names containing ':'
             # (e.g. bedrock 'amazon.nova-pro-v1:0') are never mis-parsed.
+            # An explicit per-request key (BYOK) wins over any env credential.
+            extra: dict = {}
+            if config.api_key:
+                extra["api_key"] = config.api_key
             self._model = init_chat_model(
                 model=config.resolved_model,
                 model_provider=config.lc_provider,
                 temperature=0,
+                **extra,
             )
 
     @staticmethod
@@ -70,7 +75,7 @@ class ProviderBackend(CompletionBackend):
 
         from pydantic import SecretStr
 
-        raw_key = os.getenv("AZURE_OPENAI_API_KEY")
+        raw_key = config.api_key or os.getenv("AZURE_OPENAI_API_KEY")
         return AzureChatOpenAI(
             azure_deployment=config.model or os.getenv("AZURE_OPENAI_DEPLOYMENT_NAME", "gpt-4o"),
             api_version=os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview"),
