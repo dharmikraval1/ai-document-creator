@@ -1,0 +1,21 @@
+# Render Blueprint — one-click deploy + auto-deploy on every push to main.
+# https://render.com/docs/blueprint-spec
+services:
+  - type: web
+    name: ai-document-creator
+    runtime: docker
+    plan: free
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      # Public-endpoint safety: never spend the operator's keys on requests.
+      - key: BYOK_ONLY
+        value: "true"
+      - key: LOG_FORMAT
+        value: json
+      - key: RATE_LIMIT_RPM
+        value: "20"
+      - key: MCP_TRANSPORT
+        value: both
+      # The server auto-allows RENDER_EXTERNAL_HOSTNAME (set by Render), so
+      # MCP_ALLOWED_HOSTS needs no manual configuration here.

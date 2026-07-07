@@ -8,8 +8,13 @@ import shutil
 import stat
 import tempfile
 from abc import ABC, abstractmethod
+from urllib.parse import urlparse
 
 logger = logging.getLogger(__name__)
+
+# Tokens are only ever injected into clone URLs for these hosts. Injecting
+# into arbitrary hosts would hand the token to whoever controls the URL.
+_TOKEN_INJECTION_HOSTS = frozenset({"github.com", "www.github.com"})
 
 
 def mask_token(url: str) -> str:
@@ -43,8 +48,17 @@ class LocalSource(Source):
 class GitSource(Source):
     """Clones a Git repository into a temp dir and cleans it up afterwards."""
 
-    def __init__(self, repo_url: str, github_token: str | None = None):
-        self._github_token = github_token or os.getenv("GITHUB_TOKEN")
+    def __init__(
+        self,
+        repo_url: str,
+        github_token: str | None = None,
+        use_env_token: bool = True,
+    ):
+        """use_env_token=False blocks the GITHUB_TOKEN env fallback — required
+        when the URL and token choice belong to an untrusted remote caller."""
+        if github_token is None and use_env_token:
+            github_token = os.getenv("GITHUB_TOKEN")
+        self._github_token = github_token
         self.temp_dir = tempfile.mkdtemp()
         self.repo_name = repo_url.rstrip("/").split("/")[-1].replace(".git", "")
         self.repo_url = self._authenticated_url(repo_url, self._github_token)
@@ -52,6 +66,9 @@ class GitSource(Source):
     def _authenticated_url(self, url: str, token: str | None) -> str:
         if not token or "@" in url:
             return url
+        hostname = (urlparse(url).hostname or "").lower()
+        if hostname not in _TOKEN_INJECTION_HOSTS:
+            return url  # never send the token to a non-GitHub host
         if url.startswith("https://"):
             return f"https://{token}@{url[len('https://'):]}"
         if url.startswith("http://"):

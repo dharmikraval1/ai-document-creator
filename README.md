@@ -6,6 +6,8 @@
 
 AI-powered documentation generator, exposed as an **MCP server** and a **CLI**. Point it at a **GitHub repository** or a **local project** and it writes per-file docs plus a synthesized `README.md` — using **any LLM** (Anthropic, OpenAI, Azure OpenAI, AWS Bedrock, Ollama) with your key, or **your MCP host's own model via sampling with no key at all**.
 
+📖 **New here? The step-by-step guide for every setup is in [USAGE.md](USAGE.md).**
+
 ## Use it in 60 seconds
 
 ### Option A — run it locally in your MCP host (recommended)
@@ -99,7 +101,11 @@ The pipeline traverses files, generates per-file docs concurrently (bounded by a
 
 ## Hosting your own public endpoint
 
-The included `Dockerfile` runs anywhere that supplies a `PORT` (Render, Fly.io, Railway, ...). The server then serves Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and a health probe at `/health`.
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dharmikraval1/ai-document-creator)
+
+One click via the included [`render.yaml`](render.yaml) blueprint — it enables auto-deploy on every push to `main`, health checks, and safe public defaults (`BYOK_ONLY=true`, rate limiting on, Render hostname auto-allowed).
+
+The `Dockerfile` also runs anywhere that supplies a `PORT` (Fly.io, Railway, ...). The server serves Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and a health probe at `/health`.
 
 Recommended env for a public deployment:
 
