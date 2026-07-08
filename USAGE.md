@@ -115,6 +115,10 @@ ai-doc-creator --path . --output docs
 
 # Free & local with Ollama
 ai-doc-creator --path . --provider ollama --model llama3.1
+
+# Architecture-style docs with diagrams / API reference without diagrams
+ai-doc-creator --path . --profile architecture
+ai-doc-creator --path . --profile api --no-diagrams
 ```
 
 The CLI requires a provider (there is no MCP host to sample from).
@@ -216,6 +220,8 @@ Any provider works — set the matching env var and `provider` input.
 | `github_token` | – | For private repos / opening PRs. Remote callers must supply their own. |
 | `provider`, `model` | auto | Override the LLM |
 | `incremental` | `true` | Skip unchanged files (content-hash cache) |
+| `profile` | `readme` | Style: `readme`, `api`, `architecture`, `tutorial` |
+| `diagrams` | `true` | Mermaid structure/dependency diagrams + flow charts |
 | `push_as_pr` | `false` | Commit docs to a branch + open a PR |
 | `pr_branch`, `pr_title` | auto | PR customization |
 | `return_docs` | `false` | Inline the generated markdown in the response |
@@ -227,7 +233,7 @@ Any provider works — set the matching env var and `provider` input.
 |---|---|---|
 | `path` | `.` | Project folder |
 | `output_dir` | `docs` | Where markdown is written |
-| `provider`, `model`, `incremental` | | Same as above |
+| `provider`, `model`, `incremental`, `profile`, `diagrams` | | Same as above |
 
 ### `check_doc_drift`
 
