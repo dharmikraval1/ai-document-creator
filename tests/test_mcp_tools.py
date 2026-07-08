@@ -115,7 +115,7 @@ async def test_health_endpoint_returns_ok():
 
     response = await health(_Req())
     data = json.loads(response.body)
-    assert data == {"status": "ok", "version": "2.1.1"}
+    assert data == {"status": "ok", "version": "2.2.0"}
 
 
 async def test_document_local_project_times_out(monkeypatch, tmp_path):

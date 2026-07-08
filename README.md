@@ -89,6 +89,19 @@ The CLI needs a provider key (there is no MCP host to sample from).
 
 All documentation runs are **incremental** by default: a content-hash manifest skips unchanged files, so re-runs only pay for what changed.
 
+### Diagrams & output profiles
+
+Every generated README ends with **Mermaid architecture diagrams** — a project-structure chart and a module-dependency graph computed by static analysis (Python + JS/TS imports), so they're always syntactically valid. Complex files also get model-drawn flow charts, and every model-drawn diagram is validated before shipping (invalid ones are downgraded to plain text, never broken pages). Disable with `diagrams=false` / `--no-diagrams`.
+
+Pick a documentation style with `profile` (`--profile` on the CLI):
+
+| Profile | Focus |
+|---|---|
+| `readme` (default) | Classic README: overview, install, usage |
+| `api` | API reference: signatures, params, returns, errors |
+| `architecture` | Components, data flow, design decisions + diagrams |
+| `tutorial` | Guided walkthrough for newcomers |
+
 ## How it works
 
 Two independent choices over one async pipeline:
