@@ -38,6 +38,8 @@ async def run(source, output_dir, config):
                 "index_content": "",
                 "backend": backend,
                 "max_concurrency": config.max_concurrency,
+                "profile": config.profile,
+                "diagrams": config.diagrams,
             }
         )
 
@@ -60,9 +62,25 @@ def main():
         "--provider", default=None, help="LLM provider (anthropic/openai/azure/bedrock/ollama)"
     )
     parser.add_argument("--model", default=None, help="Model name override")
+    parser.add_argument(
+        "--profile",
+        default="readme",
+        choices=["readme", "api", "architecture", "tutorial"],
+        help="Documentation style (default: readme)",
+    )
+    parser.add_argument(
+        "--no-diagrams",
+        action="store_true",
+        help="Disable Mermaid architecture diagrams and flow charts",
+    )
     args = parser.parse_args()
 
-    config = resolve_config(provider=args.provider, model=args.model)
+    config = resolve_config(
+        provider=args.provider,
+        model=args.model,
+        profile=args.profile,
+        diagrams=not args.no_diagrams,
+    )
     source = GitSource(args.repo) if args.repo else LocalSource(args.path)
 
     try:

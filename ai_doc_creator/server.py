@@ -30,6 +30,7 @@ from .core.file_traverser import FileTraverser  # noqa: E402
 from .core.graph import app as workflow_app, generate_index as _generate_index  # noqa: E402
 from .core.doc_writer import DocumentationWriter  # noqa: E402
 from .core.cache import compute_hashes, filter_changed, load_manifest, save_manifest  # noqa: E402
+from .core.profiles import get_profile  # noqa: E402
 from .core.ratelimit import RateLimitMiddleware  # noqa: E402
 
 setup_logging(json_mode=os.getenv("LOG_FORMAT", "").lower() == "json")
@@ -86,6 +87,8 @@ def _resolve_request_config(
     model: str | None,
     incremental: bool,
     ctx: Context | None,
+    profile: str = "readme",
+    diagrams: bool = True,
 ) -> DocConfig | str:
     """Build the request's DocConfig, folding in BYOK headers.
 
@@ -105,8 +108,17 @@ def _resolve_request_config(
                 f"Error: provider '{provider}' does not support per-request API "
                 f"keys; supported: {', '.join(sorted(_BYOK_PROVIDERS))}."
             )
+    try:
+        get_profile(profile)
+    except ValueError as exc:
+        return f"Error: {exc}"
     return resolve_config(
-        provider=provider, model=model, incremental=incremental, api_key=api_key
+        provider=provider,
+        model=model,
+        incremental=incremental,
+        api_key=api_key,
+        profile=profile,
+        diagrams=diagrams,
     )
 
 
@@ -210,6 +222,8 @@ async def _run_pipeline(
                 "index_content": "",
                 "backend": backend,
                 "max_concurrency": config.max_concurrency,
+                "profile": config.profile,
+                "diagrams": config.diagrams,
             }
         )
 
@@ -228,6 +242,8 @@ async def _run_pipeline(
                     "index_content": "",
                     "backend": backend,
                     "max_concurrency": config.max_concurrency,
+                    "profile": config.profile,
+                    "diagrams": config.diagrams,
                 }
             )
             index_content = idx["index_content"]
@@ -345,6 +361,8 @@ async def document_local_project(
     provider: str | None = None,
     model: str | None = None,
     incremental: bool = True,
+    profile: str = "readme",
+    diagrams: bool = True,
     ctx: Context | None = None,
 ) -> str:
     """Generate documentation for a project folder on the local machine.
@@ -356,6 +374,9 @@ async def document_local_project(
             from env if omitted; falls back to host sampling when no key is configured.
         model: Model name override (uses provider default when omitted).
         incremental: Skip unchanged files using content-hash caching.
+        profile: Documentation style: readme (default), api, architecture, or tutorial.
+        diagrams: Include Mermaid architecture/dependency diagrams and per-file
+            flow charts where helpful.
     """
     REQUEST_ID_VAR.set(uuid.uuid4().hex[:8])
     logger.info("document_local_project started path=%s", path)
@@ -369,7 +390,7 @@ async def document_local_project(
     except ValueError as exc:
         return f"Error: {exc}"
 
-    config = _resolve_request_config(provider, model, incremental, ctx)
+    config = _resolve_request_config(provider, model, incremental, ctx, profile, diagrams)
     if isinstance(config, str):
         return config
     async with _pipeline_semaphore:
@@ -393,6 +414,8 @@ async def document_repo(
     provider: str | None = None,
     model: str | None = None,
     incremental: bool = True,
+    profile: str = "readme",
+    diagrams: bool = True,
     push_as_pr: bool = False,
     pr_branch: str | None = None,
     pr_title: str | None = None,
@@ -410,6 +433,9 @@ async def document_repo(
         provider: LLM provider (anthropic/openai/azure/bedrock/ollama).
         model: Model name override.
         incremental: Skip unchanged files using content-hash caching.
+        profile: Documentation style: readme (default), api, architecture, or tutorial.
+        diagrams: Include Mermaid architecture/dependency diagrams and per-file
+            flow charts where helpful.
         push_as_pr: If True, commit the generated docs to a branch and open a PR.
         pr_branch: Branch name (default: docs/ai-generated-{timestamp}).
         pr_title: PR title (default: "docs: AI-generated documentation").
@@ -436,7 +462,7 @@ async def document_repo(
     else:
         effective_output = output_dir
 
-    config = _resolve_request_config(provider, model, incremental, ctx)
+    config = _resolve_request_config(provider, model, incremental, ctx, profile, diagrams)
     if isinstance(config, str):
         return config
 
