@@ -53,9 +53,22 @@ Same JSON shape as Claude Desktop, in the app's MCP settings file
 
 ### Which model writes the docs?
 
-- **No configuration** → the server asks *your host's model* to write the docs
-  (MCP sampling). Zero API cost, nothing to set up.
-- **Your own key** → add an `env` block for faster, dedicated generation:
+Three options, in order of preference:
+
+- **No key, any tool (doc jobs)** — most AI tools (Claude Code, Cursor,
+  Codex, Antigravity) can't serve MCP sampling, but all of them can call
+  tools. Ask your assistant:
+
+  > "Use start_doc_job to document https://github.com/user/repo, write the
+  > docs yourself batch by batch with get_next_files/submit_docs, then
+  > finish the job and open a PR."
+
+  Its own session model writes the docs; the server handles cloning,
+  batching, Mermaid diagrams, output, and the PR. Zero API key.
+- **No key, sampling-capable host** → `document_repo` works keyless out of
+  the box (the server asks the host's model via MCP sampling).
+- **Your own key** → fastest: `document_repo` generates all files in
+  parallel. Add an `env` block:
 
 ```json
       "env": { "ANTHROPIC_API_KEY": "sk-ant-..." }
