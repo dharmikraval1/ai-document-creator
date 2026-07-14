@@ -185,7 +185,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Generate documentation
-        uses: dharmikraval1/ai-document-creator@main   # pin to a tag (e.g. @v2) once released
+        uses: dharmikraval1/ai-document-creator@v2
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         # optional inputs:
