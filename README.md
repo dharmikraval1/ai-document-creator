@@ -83,9 +83,12 @@ The CLI needs a provider key (there is no MCP host to sample from).
 
 | Tool | What it does |
 |---|---|
-| `document_repo(repo_url, ...)` | Clone a GitHub repo and document it. `push_as_pr=True` opens a PR with the docs; `return_docs=True` inlines the generated markdown in the response (capped by `MAX_INLINE_DOC_KB`). |
+| `document_repo(repo_url, ...)` | Clone a GitHub repo and document it in one call (needs a key or a sampling-capable host). `push_as_pr=True` opens a PR with the docs; `return_docs=True` inlines the generated markdown in the response (capped by `MAX_INLINE_DOC_KB`). |
 | `document_local_project(path, ...)` | Document a folder on the machine the server runs on. Disabled on hosted deployments unless the operator sets `LOCAL_ROOT`. |
+| `start_doc_job` / `get_next_files` / `submit_docs` / `finish_doc_job` | **Zero-key mode for any client**: the server hands source files to *your AI tool's own model*, which writes the docs and submits them back. Works in Claude Code, Cursor, Codex, Antigravity — no API key, no sampling support needed. |
 | `check_doc_drift(path, output_dir)` | Report new/modified/deleted files since the last documentation run (no LLM calls). |
+
+**No API key and your tool doesn't support MCP sampling?** Just ask your assistant: *"Use start_doc_job to document <repo url>, write the docs yourself batch by batch, then finish the job."* Its own model does the writing — the server still contributes cloning, batching, diagrams, and the PR push.
 
 All documentation runs are **incremental** by default: a content-hash manifest skips unchanged files, so re-runs only pay for what changed.
 
