@@ -7,12 +7,12 @@
     "url": "https://github.com/dharmikraval1/ai-document-creator",
     "source": "github"
   },
-  "version": "2.2.1",
+  "version": "2.3.0",
   "packages": [
     {
       "registry_type": "pypi",
       "identifier": "ai-doc-creator",
-      "version": "2.2.1",
+      "version": "2.3.0",
       "transport": {
         "type": "stdio"
       },
