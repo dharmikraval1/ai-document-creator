@@ -210,3 +210,49 @@ def test_provider_backend_omits_api_key_kwarg_when_absent(monkeypatch):
     monkeypatch.setattr(backends, "init_chat_model", fake_init)
     backends.ProviderBackend(DocConfig(provider="openai"))
     assert "api_key" not in captured
+
+
+class _CapSession:
+    def __init__(self, supports_sampling):
+        self._supports = supports_sampling
+        self.received = None
+
+    def check_client_capability(self, capability):
+        return self._supports
+
+    async def create_message(self, messages, max_tokens):
+        from mcp.shared.exceptions import McpError
+        from mcp.types import ErrorData
+
+        raise McpError(ErrorData(code=-32601, message="Method not found"))
+
+
+class _CapCtx:
+    def __init__(self, supports_sampling):
+        self.session = _CapSession(supports_sampling)
+
+
+def test_pick_backend_rejects_ctx_without_sampling_capability():
+    from ai_doc_creator.core.backends import BackendError, pick_backend
+    from ai_doc_creator.core.config import DocConfig
+    import pytest
+
+    with pytest.raises(BackendError, match="does not support sampling"):
+        pick_backend(DocConfig(), ctx=_CapCtx(supports_sampling=False))
+
+
+def test_pick_backend_allows_ctx_with_sampling_capability():
+    from ai_doc_creator.core.backends import SamplingBackend, pick_backend
+    from ai_doc_creator.core.config import DocConfig
+
+    backend = pick_backend(DocConfig(), ctx=_CapCtx(supports_sampling=True))
+    assert isinstance(backend, SamplingBackend)
+
+
+async def test_sampling_backend_translates_method_not_found():
+    from ai_doc_creator.core.backends import BackendError, SamplingBackend
+    import pytest
+
+    backend = SamplingBackend(_CapCtx(supports_sampling=True))
+    with pytest.raises(BackendError, match="X-Provider-API-Key"):
+        await backend.complete("hello")
