@@ -99,26 +99,65 @@ class SamplingBackend(CompletionBackend):
     async def complete(self, prompt: str) -> str:
         from mcp.types import SamplingMessage, TextContent
 
-        result = await self._ctx.session.create_message(
-            messages=[
-                SamplingMessage(role="user", content=TextContent(type="text", text=prompt))
-            ],
-            max_tokens=self._max_tokens,
-        )
+        try:
+            result = await self._ctx.session.create_message(
+                messages=[
+                    SamplingMessage(role="user", content=TextContent(type="text", text=prompt))
+                ],
+                max_tokens=self._max_tokens,
+            )
+        except Exception as exc:
+            # A client that never serves sampling answers with JSON-RPC
+            # "Method not found" (-32601). Translate the protocol noise into
+            # the actionable error users need.
+            code = getattr(getattr(exc, "error", None), "code", None)
+            if code == -32601 or "method not found" in str(exc).lower():
+                raise BackendError(_NO_SAMPLING_MSG) from exc
+            raise
         content = result.content
         return content.text if getattr(content, "type", None) == "text" else str(content)
 
 
+_NO_SAMPLING_MSG = (
+    "This MCP client does not support sampling, so the server has no model to "
+    "write with. Provide an API key instead: send the X-Provider-API-Key header "
+    "(hosted endpoint) or set a provider key such as ANTHROPIC_API_KEY / "
+    "OPENAI_API_KEY (local install), or pass provider='ollama' for a local model."
+)
+
+
+def _client_supports_sampling(ctx) -> bool:
+    """True when the connected MCP client declared the sampling capability.
+
+    Unknown session shapes (tests, exotic SDKs) return True so the request
+    still tries sampling and surfaces any failure through SamplingBackend's
+    own error translation.
+    """
+    try:
+        from mcp.types import ClientCapabilities, SamplingCapability
+
+        return bool(
+            ctx.session.check_client_capability(
+                ClientCapabilities(sampling=SamplingCapability())
+            )
+        )
+    except Exception:
+        return True
+
+
 def pick_backend(config: DocConfig, ctx=None) -> CompletionBackend:
     """Choose a backend: provider key → retry-wrapped ProviderBackend;
-    MCP host ctx → SamplingBackend; otherwise raise BackendError.
+    MCP host ctx with sampling support → SamplingBackend; otherwise raise
+    BackendError.
     """
     from .retry import with_retry
 
     if config.has_provider:
         return with_retry(ProviderBackend(config))
     if ctx is not None:
-        return SamplingBackend(ctx)
+        if _client_supports_sampling(ctx):
+            return SamplingBackend(ctx)
+        raise BackendError(_NO_SAMPLING_MSG)
     raise BackendError(
         "No LLM available. Set a provider key (ANTHROPIC_API_KEY / OPENAI_API_KEY / "
         "AZURE_OPENAI_API_KEY / AWS credentials), pass provider='ollama' for a local model, "
