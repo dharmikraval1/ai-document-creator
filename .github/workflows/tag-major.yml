@@ -1,0 +1,28 @@
+name: Update major version tag
+
+# When a release like v2.2.0 is published, point the floating major tag (v2)
+# at the same commit, so `uses: dharmikraval1/ai-document-creator@v2` always
+# resolves to the latest release in that major line.
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Force major tag to this release commit
+        run: |
+          MAJOR=$(echo "$GITHUB_REF_NAME" | grep -oE '^v[0-9]+' || true)
+          if [ -z "$MAJOR" ] || [ "$MAJOR" = "$GITHUB_REF_NAME" ]; then
+            echo "Release tag '$GITHUB_REF_NAME' is not a vX.Y.Z tag; skipping."
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -f "$MAJOR" "$GITHUB_SHA"
+          git push -f origin "$MAJOR"
