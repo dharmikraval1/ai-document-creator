@@ -62,7 +62,7 @@ Keys travel in **headers**, never in tool arguments, so they stay out of chat tr
 ### Option C — GitHub Action (docs that update themselves)
 
 ```yaml
-- uses: dharmikraval1/ai-document-creator@main
+- uses: dharmikraval1/ai-document-creator@v2
   env:
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
@@ -152,7 +152,7 @@ Recommended env for a public deployment:
 ```bash
 python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -e ".[dev]"
-pytest -q          # 127 tests
+pytest -q          # 157 tests
 flake8 && mypy ai_doc_creator --ignore-missing-imports
 ```
 
