@@ -21,7 +21,7 @@ classifiers = [
     "Topic :: Software Development :: Documentation",
 ]
 dependencies = [
-    "mcp>=1.10",
+    "mcp>=1.10,<2",
     "langchain>=0.3",
     "langchain-core>=0.3",
     "langchain-community>=0.3",
