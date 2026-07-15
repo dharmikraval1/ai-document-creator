@@ -85,7 +85,12 @@ def build_diagram_section(files: List[str], repo_path: str) -> str:
         parts.append("### Module Dependencies\n\n" + dependencies)
     if not parts:
         return ""
-    return "\n\n## Architecture Diagrams\n\n" + "\n\n".join(parts) + "\n"
+    return (
+        "\n\n## Architecture Diagrams\n\n"
+        + "\n\n".join(parts)
+        + "\n\n> Diagrams render on GitHub/GitLab and in IDE markdown previews; "
+        "plain terminals show them as Mermaid source.\n"
+    )
 
 
 def _extract_summary(doc_content: str) -> str:

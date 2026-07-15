@@ -272,9 +272,10 @@ async def _run_pipeline(
             f"- **Documentation Pages Created**: {num_changed}\n"
             f"- **Local Output Path**: `{abs_output_dir}`\n\n"
             "## Generated README.md Content\n\n"
-            "```markdown\n"
+            # Raw markdown, NOT wrapped in a code fence: the README contains
+            # ```mermaid blocks, and nested fences corrupt rendering (users
+            # saw broken text instead of diagrams).
             f"{index_content}\n"
-            "```\n"
         )
     except Exception as exc:
         logger.error("Pipeline error: %s", exc)
@@ -754,7 +755,8 @@ async def get_next_files(job_id: str, max_files: int = 3) -> str:
         prof.file_sections,
     ]
     for file_path, content in batch:
-        parts.append(f"\n## FILE: {file_path}\n\n```\n{content}\n```\n")
+        # Four-backtick fence so source files containing ``` don't break it.
+        parts.append(f"\n## FILE: {file_path}\n\n````\n{content}\n````\n")
     parts.append(
         f'\nNEXT: call `submit_docs(job_id="{job_id}", '
         'docs={"<file_path>": "<markdown>", ...})` with one entry per file above.'

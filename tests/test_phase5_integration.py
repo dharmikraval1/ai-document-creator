@@ -85,3 +85,22 @@ def test_profile_threaded_into_prompts(tmp_path, monkeypatch):
     index_prompts = [p for p in backend.calls if "Repository Structure" in p]
     assert file_prompts and "API Reference" in file_prompts[0]
     assert index_prompts and "API reference index" in index_prompts[0]
+
+
+def test_report_readme_is_raw_markdown_so_diagrams_render(tmp_path, monkeypatch):
+    # Regression: the report used to wrap the README in a ```markdown fence;
+    # nested ```mermaid fences then broke rendering (diagrams invisible).
+    (tmp_path / "a.py").write_text("import b\n", encoding="utf-8")
+    (tmp_path / "b.py").write_text("X = 1\n", encoding="utf-8")
+    (tmp_path / "c.py").write_text("import b\n", encoding="utf-8")
+    monkeypatch.setattr(
+        server,
+        "pick_backend",
+        lambda config, ctx=None: FakeBackend("### Summary\nx\n### Overview\ny"),
+    )
+    result = asyncio.run(
+        server.document_local_project(path=str(tmp_path), output_dir=str(tmp_path / "o"), ctx=None)
+    )
+    assert "```markdown" not in result
+    assert "## Architecture Diagrams" in result  # visible raw in the response
+    assert result.count("```mermaid") >= 2
