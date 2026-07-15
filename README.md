@@ -1,65 +1,86 @@
 # AI Document Creator
 
 [![CI](https://github.com/dharmikraval1/ai-document-creator/actions/workflows/ci.yml/badge.svg)](https://github.com/dharmikraval1/ai-document-creator/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/ai-doc-creator)](https://pypi.org/project/ai-doc-creator/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue)](pyproject.toml)
 
-AI-powered documentation generator, exposed as an **MCP server** and a **CLI**. Point it at a **GitHub repository** or a **local project** and it writes per-file docs plus a synthesized `README.md` — using **any LLM** (Anthropic, OpenAI, Azure OpenAI, AWS Bedrock, Ollama) with your key, or **your MCP host's own model via sampling with no key at all**.
+**Ask your AI assistant to document any codebase — and get a full set of docs with architecture diagrams, delivered as files or a pull request.**
 
-📖 **New here? The step-by-step guide for every setup is in [USAGE.md](USAGE.md).**
+You say:
 
-## Use it in 60 seconds
+> *"Document the repo https://github.com/user/repo and open a PR with the docs."*
 
-### Option A — run it locally in your MCP host (recommended)
+You get:
 
-With [uv](https://docs.astral.sh/uv/) installed, no clone, no venv:
+- 📄 A markdown doc for **every file** — what it does, key functions, how to use it
+- 📖 A polished **README** for the whole project
+- 📊 **Architecture diagrams** (Mermaid) — a project map and a module-dependency chart, generated from real imports so they're always accurate
+- 🔀 Delivered where you want: local folder, inline in chat, or a **GitHub pull request**
+
+Works inside **Claude Code, Claude Desktop, Cursor, Codex, Antigravity** — any app that supports MCP — plus a plain CLI and a GitHub Action.
+
+## Get started in 1 minute
+
+### In Claude Code
 
 ```bash
-# Claude Code
 claude mcp add ai-doc-creator -- uvx --from ai-doc-creator ai-doc-creator-mcp
 ```
 
-Claude Desktop / Cursor / any MCP host (`mcpServers` JSON):
+Then just ask: *"Document this project."* That's it.
+
+### In Claude Desktop, Cursor, or any other MCP app
+
+Add this to the app's MCP settings (Cursor: `~/.cursor/mcp.json`):
 
 ```json
 {
   "mcpServers": {
     "ai-doc-creator": {
       "command": "uvx",
-      "args": ["--from", "ai-doc-creator", "ai-doc-creator-mcp"],
-      "env": { "ANTHROPIC_API_KEY": "sk-..." }
+      "args": ["--from", "ai-doc-creator", "ai-doc-creator-mcp"]
     }
   }
 }
 ```
 
-The `env` block is optional — leave it out and the server uses your MCP host's model via sampling (zero API cost).
+You need [uv](https://docs.astral.sh/uv/getting-started/installation/) and `git` installed — nothing else.
 
-> Until the package is on PyPI you can substitute
-> `uvx --from git+https://github.com/dharmikraval1/ai-document-creator ai-doc-creator-mcp`.
+### Don't want to install anything?
 
-### Option B — use a hosted endpoint (nothing to install)
+Point your MCP app at the hosted server instead — see the [Usage Guide](USAGE.md#2-hosted-server--nothing-to-install).
 
-Point your MCP host at a deployment's Streamable HTTP endpoint and bring your own key in headers:
+## Do I need an API key?
 
-```json
-{
-  "mcpServers": {
-    "ai-doc-creator": {
-      "type": "http",
-      "url": "https://<your-deployment-host>/mcp",
-      "headers": {
-        "X-Provider-API-Key": "sk-...",
-        "X-Provider": "anthropic"
-      }
-    }
-  }
-}
+**No.** Pick whichever fits you:
+
+| You have... | What to do |
+|---|---|
+| **Nothing — just an AI app** | Ask: *"Use start_doc_job to document `<repo>`, write the docs yourself batch by batch, then finish the job."* Your app's own AI writes the docs — free. |
+| **An API key** (Anthropic/OpenAI/Azure/Bedrock) | Add it to the config — fastest, everything generated in one call |
+| **Ollama on your machine** | `provider="ollama"` — free and fully offline |
+
+## Pick a documentation style
+
+Add `profile` to your request (or `--profile` in the CLI):
+
+- `readme` *(default)* — classic project README
+- `api` — API reference with signatures and parameters
+- `architecture` — components, data flow, and diagrams
+- `tutorial` — a guided walkthrough for newcomers
+
+> 💡 Diagrams render as pictures on GitHub and in IDE markdown previews. A plain terminal shows their Mermaid source — that's normal.
+
+## The CLI (no AI app needed)
+
+```bash
+pip install ai-doc-creator
+export ANTHROPIC_API_KEY=sk-ant-...          # any supported provider
+ai-doc-creator --repo https://github.com/user/repo --output docs
+ai-doc-creator --path . --profile architecture
 ```
 
-Keys travel in **headers**, never in tool arguments, so they stay out of chat transcripts and logs. Legacy clients can still connect via `https://<host>/sse`.
-
-### Option C — GitHub Action (docs that update themselves)
+## Docs that update themselves (GitHub Action)
 
 ```yaml
 - uses: dharmikraval1/ai-document-creator@v2
@@ -67,100 +88,25 @@ Keys travel in **headers**, never in tool arguments, so they stay out of chat tr
     ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
 ```
 
-Regenerates your repo's docs on every push — full workflow example in [USAGE.md](USAGE.md#5-github-action--docs-that-update-themselves).
+Every push regenerates your docs and opens a PR. [Full workflow →](USAGE.md#5-github-action--docs-that-update-themselves)
 
-### Option D — CLI
-
-```bash
-pip install ai-doc-creator     # or: pip install git+https://github.com/dharmikraval1/ai-document-creator
-ai-doc-creator --repo https://github.com/user/repo --output docs
-ai-doc-creator --path . --provider ollama --model llama3.1
-```
-
-The CLI needs a provider key (there is no MCP host to sample from).
-
-## MCP tools
-
-| Tool | What it does |
-|---|---|
-| `document_repo(repo_url, ...)` | Clone a GitHub repo and document it in one call (needs a key or a sampling-capable host). `push_as_pr=True` opens a PR with the docs; `return_docs=True` inlines the generated markdown in the response (capped by `MAX_INLINE_DOC_KB`). |
-| `document_local_project(path, ...)` | Document a folder on the machine the server runs on. Disabled on hosted deployments unless the operator sets `LOCAL_ROOT`. |
-| `start_doc_job` / `get_next_files` / `submit_docs` / `finish_doc_job` | **Zero-key mode for any client**: the server hands source files to *your AI tool's own model*, which writes the docs and submits them back. Works in Claude Code, Cursor, Codex, Antigravity — no API key, no sampling support needed. |
-| `check_doc_drift(path, output_dir)` | Report new/modified/deleted files since the last documentation run (no LLM calls). |
-
-**No API key and your tool doesn't support MCP sampling?** Just ask your assistant: *"Use start_doc_job to document <repo url>, write the docs yourself batch by batch, then finish the job."* Its own model does the writing — the server still contributes cloning, batching, diagrams, and the PR push.
-
-All documentation runs are **incremental** by default: a content-hash manifest skips unchanged files, so re-runs only pay for what changed.
-
-### Diagrams & output profiles
-
-Every generated README ends with **Mermaid architecture diagrams** — a project-structure chart and a module-dependency graph computed by static analysis (Python + JS/TS imports), so they're always syntactically valid. Complex files also get model-drawn flow charts, and every model-drawn diagram is validated before shipping (invalid ones are downgraded to plain text, never broken pages). Disable with `diagrams=false` / `--no-diagrams`.
-
-Pick a documentation style with `profile` (`--profile` on the CLI):
-
-| Profile | Focus |
-|---|---|
-| `readme` (default) | Classic README: overview, install, usage |
-| `api` | API reference: signatures, params, returns, errors |
-| `architecture` | Components, data flow, design decisions + diagrams |
-| `tutorial` | Guided walkthrough for newcomers |
-
-## How it works
-
-Two independent choices over one async pipeline:
-
-- **Source** — `GitSource` (clone a URL) or `LocalSource` (read a path).
-- **Backend** — `ProviderBackend` (any provider, via env key or per-request header key) or `SamplingBackend` (the MCP host's model). `pick_backend` chooses: an explicit key wins; otherwise a configured provider; otherwise host sampling; otherwise a clear error.
-
-The pipeline traverses files, generates per-file docs concurrently (bounded by a semaphore), then synthesizes a top-level `README.md`.
-
-## LLM providers
-
-| Provider | Configure via |
-|---|---|
-| Anthropic | `ANTHROPIC_API_KEY` env, or `X-Provider-API-Key` header |
-| OpenAI | `OPENAI_API_KEY` env, or header |
-| Azure OpenAI | `AZURE_OPENAI_API_KEY` + endpoint/deployment (see `.env.example`), or header |
-| AWS Bedrock | `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` (env only) |
-| Ollama (local) | `provider="ollama"` (no key) |
-| None | MCP host sampling — the host's model writes the docs |
-
-## Hosting your own public endpoint
+## Host your own public server
 
 [![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/dharmikraval1/ai-document-creator)
 
-One click via the included [`render.yaml`](render.yaml) blueprint — it enables auto-deploy on every push to `main`, health checks, and safe public defaults (`BYOK_ONLY=true`, rate limiting on, Render hostname auto-allowed).
+One click. Safe defaults are pre-configured: your API keys are never spent on other people's requests (they bring their own key in a header, or their app's AI writes the docs), rate limiting is on, and auto-deploy tracks `main`.
 
-The `Dockerfile` also runs anywhere that supplies a `PORT` (Fly.io, Railway, ...). The server serves Streamable HTTP at `/mcp`, legacy SSE at `/sse`, and a health probe at `/health`.
+## Good to know
 
-Recommended env for a public deployment:
+- **Incremental**: re-runs only process files that changed (content-hash cache) — fast and cheap.
+- **Your key stays private**: keys travel in config/headers only — never in chat messages, logs, or output.
+- **Hardened**: SSRF guards, request sandboxing, size/time/rate limits. Details in [SECURITY.md](SECURITY.md).
 
-| Variable | Value | Why |
-|---|---|---|
-| `MCP_ALLOWED_HOSTS` | your public hostname (e.g. `your-app.onrender.com`) | DNS-rebinding protection rejects unknown Host headers |
-| `BYOK_ONLY` | `true` | never spend *your* keys on strangers — users bring keys in headers or use sampling |
-| `RATE_LIMIT_RPM` | `20` (default) | per-client request cap; `0` disables |
-| `LOG_FORMAT` | `json` | structured logs |
-| `MCP_TRANSPORT` | `both` (default) / `streamable-http` / `sse` | which HTTP transports to serve |
+## Learn more
 
-## Security model
-
-- **Keys**: header-only intake for remote users; passed explicitly to the provider client; never written to env, logs, or `repr()`; `BYOK_ONLY=true` guarantees the server's own keys are never used for requests.
-- **SSRF**: repo URLs must be HTTPS and must not resolve to private/reserved address space; DNS-rebinding protection on the HTTP transports.
-- **Filesystem**: hosted deployments refuse local-filesystem tools (unless `LOCAL_ROOT` opts in) and write repo docs to per-request temp dirs — callers can't read or write server paths.
-- **Abuse limits**: per-client rate limit, bounded pipeline concurrency, pipeline timeout, repo-size cap, per-file-size cap.
-
-## Development
-
-```bash
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
-pip install -e ".[dev]"
-pytest -q          # 157 tests
-flake8 && mypy ai_doc_creator --ignore-missing-imports
-```
-
-Design specs, implementation plans, and phase status live in [planning/](planning/).
+- 📖 [Usage Guide](USAGE.md) — step-by-step setup for every app, all options, troubleshooting
+- 🤝 [Contributing](CONTRIBUTING.md) · 🔒 [Security policy](SECURITY.md) · 🗂 [Design docs](planning/)
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE) — free for any use.
